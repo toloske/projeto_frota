@@ -24,9 +24,10 @@ const App: React.FC = () => {
   const [svcList, setSvcList] = useState<SVCConfig[]>([]);
   const [formKey, setFormKey] = useState(0);
   
-  // Link de sincronização
+  // Link de sincronização usando padrão Vite (import.meta.env)
   const [syncUrl, setSyncUrl] = useState<string>(
-    (process.env.VITE_SYNC_URL as string) || localStorage.getItem('fleet_sync_url') || ''
+    // Fix: Using type assertion to any for import.meta to avoid property 'env' not found error when Vite client types are not loaded
+    ((import.meta as any).env?.VITE_SYNC_URL as string) || localStorage.getItem('fleet_sync_url') || ''
   );
   
   const [isSyncing, setIsSyncing] = useState(false);
@@ -57,13 +58,12 @@ const App: React.FC = () => {
     }
   }, [syncUrl]);
 
-  // Efeito de Polling: Sincroniza a cada 30 segundos se estiver online
   useEffect(() => {
     if (syncUrl) {
-      fetchCloudData(); // Primeira carga
+      fetchCloudData();
       
       pollingRef.current = window.setInterval(() => {
-        fetchCloudData(true); // Sincronização silenciosa em background
+        fetchCloudData(true);
       }, 30000);
     }
     
@@ -92,12 +92,10 @@ const App: React.FC = () => {
   };
 
   const handleSaveSubmission = async (data: FormData) => {
-    // 1. Salva local imediatamente
     const updated = [data, ...submissions];
     setSubmissions(updated);
     localStorage.setItem('fleet_submissions', JSON.stringify(updated));
 
-    // 2. Tenta enviar para nuvem e aguarda confirmação
     if (syncUrl) {
       setIsSyncing(true);
       try {
@@ -108,7 +106,6 @@ const App: React.FC = () => {
           body: JSON.stringify(data)
         });
         
-        // Pequeno delay para o Google processar e então atualiza a lista
         setTimeout(() => fetchCloudData(true), 2000);
         return true;
       } catch (e) {
@@ -195,7 +192,6 @@ const App: React.FC = () => {
         )}
       </main>
 
-      {/* Login Modal */}
       {showLoginModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-md">
           <div className="bg-white w-full max-w-sm rounded-[2.5rem] shadow-2xl p-10 animate-in zoom-in-95 duration-200">
@@ -218,7 +214,6 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* Bottom Nav */}
       <nav className="fixed bottom-4 left-4 right-4 bg-white/90 backdrop-blur-xl border border-slate-100 flex justify-around p-3 z-50 shadow-2xl rounded-[2rem] md:max-w-md md:mx-auto">
         <button onClick={() => setActiveTab('form')} className={`flex flex-col items-center gap-1 flex-1 py-2 rounded-2xl transition-all ${activeTab === 'form' ? 'bg-slate-100 text-slate-900' : 'text-slate-400'}`}>
           <ClipboardList className="w-5 h-5" />
