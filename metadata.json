@@ -1,0 +1,7 @@
+{
+  "name": "Gestão de Operação - Frota",
+  "description": "Aplicativo web para reporte diário de operação de frota, incluindo ofertas de SPOT, justificativas de frota parada e registro de problemas operacionais.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}

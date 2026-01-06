@@ -1,0 +1,47 @@
+
+export interface VehicleStatus {
+  plate: string;
+  category: string;
+  running: boolean;
+  justification?: string;
+}
+
+export interface SpotOffer {
+  bulkVan: number;
+  bulkVuc: number;
+  utilitarios: number;
+  van: number;
+  veiculoPasseio: number;
+  vuc: number;
+}
+
+export interface OperationalProblem {
+  description: string;
+  media: string[];
+}
+
+export interface FormData {
+  id: string;
+  timestamp: string;
+  date: string;
+  svc: string;
+  spotOffers: SpotOffer;
+  fleetStatus: VehicleStatus[];
+  baseCapacity: Record<string, number>;
+  problems: OperationalProblem;
+  acceptances: string[];
+}
+
+export interface SVCConfig {
+  id: string;
+  name: string;
+  vehicles: { plate: string; category: string }[];
+}
+
+export interface DashboardStats {
+  totalRunning: number;
+  totalStopped: number;
+  totalSpot: number;
+  efficiency: string;
+  problemCount: number;
+}
