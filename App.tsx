@@ -4,7 +4,7 @@ import { FormView } from './components/FormView';
 import { AdminDashboard } from './components/AdminDashboard';
 import { SettingsView } from './components/SettingsView';
 import { FormData, SVCConfig } from './types';
-import { DEFAULT_SVC_LIST } from './constants';
+import { DEFAULT_SVC_LIST, GLOBAL_SYNC_URL } from './constants';
 import { 
   ClipboardList, 
   LayoutDashboard, 
@@ -24,10 +24,14 @@ const App: React.FC = () => {
   const [svcList, setSvcList] = useState<SVCConfig[]>([]);
   const [formKey, setFormKey] = useState(0);
   
-  const [syncUrl, setSyncUrl] = useState<string>(
-    localStorage.getItem('fleet_sync_url') || ''
-  );
-  
+  // O syncUrl agora tenta primeiro o localStorage (ajustado pelo admin) 
+  // e depois o GLOBAL_SYNC_URL (definido no código)
+  const [syncUrl, setSyncUrl] = useState<string>(() => {
+    const saved = localStorage.getItem('fleet_sync_url');
+    if (saved && saved.trim().startsWith('http')) return saved.trim();
+    return GLOBAL_SYNC_URL.trim();
+  });
+
   const [isSyncing, setIsSyncing] = useState(false);
   const [lastSync, setLastSync] = useState<Date | null>(null);
   const [syncError, setSyncError] = useState(false);
@@ -38,16 +42,12 @@ const App: React.FC = () => {
 
   const mergeSubmissions = (local: FormData[], remote: FormData[]) => {
     const map = new Map<string, FormData>();
-    // Remotos são a base
     remote.forEach(s => {
       const cleanDate = s.date && s.date.includes('T') ? s.date.split('T')[0] : s.date;
       map.set(s.id, { ...s, date: cleanDate });
     });
-    // Preserva locais que ainda não estão no remoto
     local.forEach(s => {
-      if (!map.has(s.id)) {
-        map.set(s.id, s);
-      }
+      if (!map.has(s.id)) map.set(s.id, s);
     });
     return Array.from(map.values()).sort((a, b) => 
       new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
@@ -55,19 +55,19 @@ const App: React.FC = () => {
   };
 
   const fetchCloudData = useCallback(async (silent = false) => {
-    if (!syncUrl || !syncUrl.startsWith('http')) return;
+    const currentUrl = syncUrl.trim();
+    if (!currentUrl || !currentUrl.startsWith('http')) return;
+
     if (!silent) setIsSyncing(true);
     
     try {
-      // Simplificado para evitar problemas de CORS no mobile
-      const response = await fetch(syncUrl, { 
+      const response = await fetch(currentUrl, { 
         method: 'GET',
-        mode: 'cors',
         redirect: 'follow',
         cache: 'no-store'
       });
       
-      if (!response.ok) throw new Error("Erro na rede");
+      if (!response.ok) throw new Error("Offline");
       
       const remoteData = await response.json();
       
@@ -81,15 +81,21 @@ const App: React.FC = () => {
         setSyncError(false);
       }
     } catch (e) {
-      console.warn("Falha na sincronia:", e);
-      // Só marca erro se for uma tentativa manual ou se falhar repetidamente
-      if (!silent) setSyncError(true);
+      if (!silent) {
+        console.warn("Falha na sincronização:", e);
+        setSyncError(true);
+      }
     } finally {
       if (!silent) setIsSyncing(false);
     }
   }, [syncUrl]);
 
   useEffect(() => {
+    // Sincronizar sempre que o app for aberto ou ganhar foco no celular
+    const handleFocus = () => fetchCloudData(true);
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener('online', handleFocus);
+    
     const saved = localStorage.getItem('fleet_submissions');
     if (saved) setSubmissions(JSON.parse(saved));
 
@@ -98,9 +104,15 @@ const App: React.FC = () => {
 
     if (syncUrl) {
       fetchCloudData();
-      pollingRef.current = window.setInterval(() => fetchCloudData(true), 30000); // 30s
+      // Polling de 60 segundos para manter dados frescos
+      pollingRef.current = window.setInterval(() => fetchCloudData(true), 60000);
     }
-    return () => { if (pollingRef.current) clearInterval(pollingRef.current); };
+
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('online', handleFocus);
+      if (pollingRef.current) clearInterval(pollingRef.current);
+    };
   }, [syncUrl, fetchCloudData]);
 
   const handleAdminAuth = (e?: React.FormEvent) => {
@@ -111,32 +123,30 @@ const App: React.FC = () => {
       setShowLoginModal(false);
       setPasswordInput('');
     } else {
-      alert("Acesso negado.");
+      alert("Senha incorreta.");
     }
   };
 
   const handleSaveSubmission = async (data: FormData) => {
-    // 1. Salva localmente IMEDIATAMENTE
+    // Salva local primeiro para não travar o usuário
     setSubmissions(prev => {
       const updated = [data, ...prev];
       localStorage.setItem('fleet_submissions', JSON.stringify(updated));
       return updated;
     });
 
-    // 2. Tenta enviar para a nuvem
     if (syncUrl) {
       setIsSyncing(true);
       try {
         await fetch(syncUrl, {
           method: 'POST',
-          mode: 'no-cors', // Necessário para Google Apps Script POST sem preflight
+          mode: 'no-cors',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(data)
         });
-        // Espera um pouco e sincroniza para baixar os dados atualizados
-        setTimeout(() => fetchCloudData(true), 3000);
+        // Sincroniza logo após envio para confirmar
+        setTimeout(() => fetchCloudData(true), 2000);
       } catch (e) {
-        console.error("Erro no envio:", e);
         setSyncError(true);
       } finally {
         setIsSyncing(false);
@@ -151,8 +161,8 @@ const App: React.FC = () => {
         <div className="container mx-auto flex justify-between items-center">
           <div className="flex items-center gap-3">
             <div 
-              onClick={() => fetchCloudData()}
-              className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all cursor-pointer ${syncUrl ? (syncError ? 'bg-rose-500' : 'bg-indigo-600') : 'bg-slate-200'} ${isSyncing ? 'animate-pulse' : ''}`}
+              onClick={() => userRole === 'admin' && fetchCloudData()}
+              className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${syncUrl ? (syncError ? 'bg-rose-500' : 'bg-indigo-600') : 'bg-slate-200'} ${isSyncing ? 'animate-pulse' : ''}`}
             >
               {syncError ? (
                 <AlertTriangle className="w-5 h-5 text-white" />
@@ -161,18 +171,18 @@ const App: React.FC = () => {
               )}
             </div>
             <div>
-              <h1 className="text-sm font-black uppercase tracking-tight leading-none">Frota Digital</h1>
+              <h1 className="text-sm font-black uppercase tracking-tight leading-none">Frota Hub</h1>
               <div className="flex items-center gap-1.5 mt-1">
                 {!syncUrl ? (
                   <div className="flex items-center gap-1 text-slate-400">
                     <WifiOff className="w-2.5 h-2.5" />
-                    <span className="text-[8px] font-bold uppercase">Offline</span>
+                    <span className="text-[8px] font-bold uppercase">Sem Link Sinc</span>
                   </div>
                 ) : (
                   <div className="flex items-center gap-1">
                     <div className={`w-1.5 h-1.5 rounded-full ${syncError ? 'bg-rose-500' : 'bg-emerald-500 animate-pulse'}`} />
                     <span className={`text-[8px] font-bold uppercase ${syncError ? 'text-rose-500' : 'text-emerald-500'}`}>
-                      {syncError ? 'Erro de Sincronia' : 'Conectado'}
+                      {syncError ? 'Erro de Rede' : 'Sincronizado'}
                     </span>
                   </div>
                 )}
@@ -181,12 +191,12 @@ const App: React.FC = () => {
           </div>
           
           {userRole === 'standard' ? (
-            <button onClick={() => setShowLoginModal(true)} className="p-2 text-slate-300 hover:text-slate-600 transition-colors">
+            <button onClick={() => setShowLoginModal(true)} className="p-2 text-slate-300 hover:text-indigo-600 transition-colors">
               <Lock className="w-5 h-5" />
             </button>
           ) : (
-            <div className="flex items-center gap-2 bg-indigo-50 px-3 py-1.5 rounded-full border border-indigo-100">
-              <div className="w-2 h-2 bg-indigo-500 rounded-full animate-pulse" />
+            <div className="bg-indigo-50 px-3 py-1.5 rounded-full border border-indigo-100 flex items-center gap-2">
+              <ShieldCheck className="w-3 h-3 text-indigo-600" />
               <span className="text-[10px] font-black text-indigo-600 uppercase">Gestor</span>
             </div>
           )}
@@ -199,16 +209,13 @@ const App: React.FC = () => {
             key={formKey} 
             onSave={handleSaveSubmission} 
             svcList={svcList} 
-            onNewForm={() => {
-              setFormKey(k => k + 1);
-              window.scrollTo(0,0);
-            }}
+            onNewForm={() => setFormKey(k => k + 1)}
             isSyncing={isSyncing}
           />
         )}
         
         {userRole === 'admin' && (
-          <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <div className="animate-in fade-in duration-300">
             {activeTab === 'admin' && (
               <AdminDashboard 
                 submissions={submissions} 
@@ -222,13 +229,13 @@ const App: React.FC = () => {
               <SettingsView 
                 svcList={svcList} 
                 onUpdate={(l) => { setSvcList(l); localStorage.setItem('fleet_svc_config', JSON.stringify(l)); }} 
-                onClearData={() => { if(confirm('Resetar banco local?')) { setSubmissions([]); localStorage.removeItem('fleet_submissions'); }}}
+                onClearData={() => { if(confirm('Isso apagará todos os dados locais. Continuar?')) { localStorage.clear(); window.location.reload(); }}}
                 syncUrl={syncUrl}
                 onUpdateSyncUrl={(url) => { 
-                  const cleanUrl = url.trim();
+                  const cleanUrl = url.trim().replace(/[\s\u200B-\u200D\uFEFF]/g, '');
                   setSyncUrl(cleanUrl); 
                   localStorage.setItem('fleet_sync_url', cleanUrl); 
-                  setTimeout(() => fetchCloudData(), 500);
+                  setTimeout(() => fetchCloudData(), 300);
                 }}
                 submissions={submissions}
                 onImportData={(data) => { setSubmissions(data); localStorage.setItem('fleet_submissions', JSON.stringify(data)); }}
@@ -239,27 +246,24 @@ const App: React.FC = () => {
       </main>
 
       {userRole === 'admin' && (
-        <nav className="fixed bottom-6 left-1/2 -translate-x-1/2 w-[90%] max-w-sm bg-white/90 backdrop-blur-xl border border-slate-200 shadow-2xl rounded-[2.5rem] flex justify-around p-2 z-[60]">
-          <button onClick={() => setActiveTab('form')} className={`flex flex-col items-center gap-1 flex-1 py-3 rounded-[2rem] transition-all ${activeTab === 'form' ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-400'}`}>
+        <nav className="fixed bottom-6 left-1/2 -translate-x-1/2 w-[90%] max-w-sm bg-white border border-slate-200 shadow-2xl rounded-full flex justify-around p-1.5 z-[60]">
+          <button onClick={() => setActiveTab('form')} className={`flex flex-col items-center gap-1 flex-1 py-3 rounded-full transition-all ${activeTab === 'form' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}>
             <ClipboardList className="w-5 h-5" />
-            <span className="text-[8px] font-black uppercase">Novo</span>
           </button>
-          <button onClick={() => setActiveTab('admin')} className={`flex flex-col items-center gap-1 flex-1 py-3 rounded-[2rem] transition-all ${activeTab === 'admin' ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-400'}`}>
+          <button onClick={() => setActiveTab('admin')} className={`flex flex-col items-center gap-1 flex-1 py-3 rounded-full transition-all ${activeTab === 'admin' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}>
             <LayoutDashboard className="w-5 h-5" />
-            <span className="text-[8px] font-black uppercase">Relatórios</span>
           </button>
-          <button onClick={() => setActiveTab('settings')} className={`flex flex-col items-center gap-1 flex-1 py-3 rounded-[2rem] transition-all ${activeTab === 'settings' ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-400'}`}>
+          <button onClick={() => setActiveTab('settings')} className={`flex flex-col items-center gap-1 flex-1 py-3 rounded-full transition-all ${activeTab === 'settings' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}>
             <Settings className="w-5 h-5" />
-            <span className="text-[8px] font-black uppercase">Ajustes</span>
           </button>
         </nav>
       )}
 
       {showLoginModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-slate-900/60 backdrop-blur-sm">
-          <div className="bg-white w-full max-w-sm rounded-[2.5rem] shadow-2xl p-8 animate-in zoom-in-95">
-            <h2 className="text-xl font-black text-slate-800 mb-6 flex items-center gap-2">
-              <ShieldCheck className="w-6 h-6 text-indigo-600" /> Painel Gestor
+          <div className="bg-white w-full max-w-sm rounded-[2rem] shadow-2xl p-8">
+            <h2 className="text-xl font-black text-slate-800 mb-6 flex items-center gap-2 uppercase tracking-tight">
+              <ShieldCheck className="w-6 h-6 text-indigo-600" /> Acesso Restrito
             </h2>
             <form onSubmit={handleAdminAuth} className="space-y-4">
               <input 
@@ -268,11 +272,11 @@ const App: React.FC = () => {
                 autoFocus
                 value={passwordInput}
                 onChange={(e) => setPasswordInput(e.target.value)}
-                className="w-full p-4 bg-slate-50 border-2 border-transparent focus:border-indigo-500 rounded-2xl outline-none transition-all font-bold text-center"
+                className="w-full p-4 bg-slate-50 border-2 border-transparent focus:border-indigo-500 rounded-2xl outline-none font-bold text-center"
               />
               <div className="flex gap-2">
-                <button type="button" onClick={() => setShowLoginModal(false)} className="flex-1 py-4 text-slate-400 font-black uppercase text-[10px]">Voltar</button>
-                <button type="submit" className="flex-[2] py-4 bg-indigo-600 text-white font-black rounded-2xl uppercase text-[10px] shadow-lg shadow-indigo-200">Entrar</button>
+                <button type="button" onClick={() => setShowLoginModal(false)} className="flex-1 py-4 text-slate-400 font-black uppercase text-[10px]">Fechar</button>
+                <button type="submit" className="flex-[2] py-4 bg-indigo-600 text-white font-black rounded-2xl uppercase text-[10px]">Entrar</button>
               </div>
             </form>
           </div>
