@@ -9,13 +9,11 @@ import {
   ClipboardList, 
   LayoutDashboard, 
   Settings, 
-  UserCircle, 
   Wifi, 
   WifiOff,
   X,
   CloudLightning,
   Lock,
-  // Fix: Added ShieldCheck to imports as it was missing but used on line 216
   ShieldCheck
 } from 'lucide-react';
 
@@ -27,7 +25,6 @@ const App: React.FC = () => {
   const [formKey, setFormKey] = useState(0);
   
   // A URL agora é prioritariamente buscada do ambiente (Vercel) ou do localStorage para o admin
-  // Fix: Cast import.meta to any to resolve property 'env' does not exist error in TypeScript
   const [syncUrl, setSyncUrl] = useState<string>(
     ((import.meta as any).env?.VITE_SYNC_URL as string) || localStorage.getItem('fleet_sync_url') || ''
   );
@@ -44,12 +41,10 @@ const App: React.FC = () => {
     if (!silent) setIsSyncing(true);
     
     try {
-      // Usando cache: 'no-store' para garantir dados frescos no dashboard
       const response = await fetch(syncUrl, { cache: 'no-store' });
       const data = await response.json();
       
       if (Array.isArray(data)) {
-        // Formata os dados vindos do Google Sheets se necessário
         setSubmissions(data);
         setLastSync(new Date());
         localStorage.setItem('fleet_submissions', JSON.stringify(data));
@@ -62,7 +57,6 @@ const App: React.FC = () => {
   }, [syncUrl]);
 
   useEffect(() => {
-    // Carrega dados locais imediatamente para funcionamento offline
     const saved = localStorage.getItem('fleet_submissions');
     if (saved) setSubmissions(JSON.parse(saved));
 
@@ -80,7 +74,7 @@ const App: React.FC = () => {
 
   const handleAdminAuth = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    // Senha simples para sua gestão, pode ser alterada aqui
+    // Senha para acessar os relatórios
     if (passwordInput === 'admin2024') {
       setUserRole('admin');
       setActiveTab('admin');
@@ -92,18 +86,16 @@ const App: React.FC = () => {
   };
 
   const handleSaveSubmission = async (data: FormData) => {
-    // 1. Salva localmente primeiro (Segurança)
     const updated = [data, ...submissions];
     setSubmissions(updated);
     localStorage.setItem('fleet_submissions', JSON.stringify(updated));
 
-    // 2. Tenta enviar para o banco de dados central
     if (syncUrl) {
       setIsSyncing(true);
       try {
         await fetch(syncUrl, {
           method: 'POST',
-          mode: 'no-cors', // Essencial para Google Apps Script
+          mode: 'no-cors',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(data)
         });
@@ -115,15 +107,12 @@ const App: React.FC = () => {
       } finally {
         setIsSyncing(false);
       }
-    } else {
-      console.warn("App funcionando em modo local. URL de sincronia não configurada.");
-      return true;
     }
+    return true;
   };
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900 font-inter">
-      {/* Header Minimalista para Colaborador */}
       <header className="bg-white border-b border-slate-200 p-4 sticky top-0 z-50">
         <div className="container mx-auto flex justify-between items-center">
           <div className="flex items-center gap-3">
@@ -133,17 +122,13 @@ const App: React.FC = () => {
             <div>
               <h1 className="text-sm font-black uppercase tracking-tight leading-none">Frota Digital</h1>
               <p className="text-[9px] font-bold text-slate-400 uppercase mt-1">
-                {syncUrl ? 'Conectado ao Banco Central' : 'Modo Offline Ativo'}
+                {syncUrl ? 'Conectado ao Painel Gestor' : 'Modo Offline Ativo'}
               </p>
             </div>
           </div>
           
           {userRole === 'standard' ? (
-            <button 
-              onClick={() => setShowLoginModal(true)}
-              className="p-2 text-slate-300 hover:text-slate-600 transition-colors"
-              title="Acesso Gestão"
-            >
+            <button onClick={() => setShowLoginModal(true)} className="p-2 text-slate-300 hover:text-slate-600 transition-colors">
               <Lock className="w-5 h-5" />
             </button>
           ) : (
@@ -194,20 +179,19 @@ const App: React.FC = () => {
         )}
       </main>
 
-      {/* Menu Inferior apenas para Admin */}
       {userRole === 'admin' && (
         <nav className="fixed bottom-6 left-1/2 -translate-x-1/2 w-[90%] max-w-sm bg-white/90 backdrop-blur-xl border border-slate-200 shadow-2xl rounded-[2.5rem] flex justify-around p-2 z-[60]">
           <button onClick={() => setActiveTab('form')} className={`flex flex-col items-center gap-1 flex-1 py-3 rounded-[2rem] transition-all ${activeTab === 'form' ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-400'}`}>
             <ClipboardList className="w-5 h-5" />
-            <span className="text-[8px] font-black uppercase">Form</span>
+            <span className="text-[8px] font-black uppercase">Novo</span>
           </button>
           <button onClick={() => setActiveTab('admin')} className={`flex flex-col items-center gap-1 flex-1 py-3 rounded-[2rem] transition-all ${activeTab === 'admin' ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-400'}`}>
             <LayoutDashboard className="w-5 h-5" />
-            <span className="text-[8px] font-black uppercase">Painel</span>
+            <span className="text-[8px] font-black uppercase">Relatórios</span>
           </button>
           <button onClick={() => setActiveTab('settings')} className={`flex flex-col items-center gap-1 flex-1 py-3 rounded-[2rem] transition-all ${activeTab === 'settings' ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-400'}`}>
             <Settings className="w-5 h-5" />
-            <span className="text-[8px] font-black uppercase">Setup</span>
+            <span className="text-[8px] font-black uppercase">Ajustes</span>
           </button>
         </nav>
       )}
@@ -216,19 +200,19 @@ const App: React.FC = () => {
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-slate-900/60 backdrop-blur-sm">
           <div className="bg-white w-full max-w-sm rounded-[2.5rem] shadow-2xl p-8 animate-in zoom-in-95">
             <h2 className="text-xl font-black text-slate-800 mb-6 flex items-center gap-2">
-              <ShieldCheck className="w-6 h-6 text-indigo-600" /> Acesso Gestão
+              <ShieldCheck className="w-6 h-6 text-indigo-600" /> Painel Gestor
             </h2>
             <form onSubmit={handleAdminAuth} className="space-y-4">
               <input 
                 type="password"
-                placeholder="Senha administrativa"
+                placeholder="Digite a senha"
                 autoFocus
                 value={passwordInput}
                 onChange={(e) => setPasswordInput(e.target.value)}
                 className="w-full p-4 bg-slate-50 border-2 border-transparent focus:border-indigo-500 rounded-2xl outline-none transition-all font-bold text-center"
               />
               <div className="flex gap-2">
-                <button type="button" onClick={() => setShowLoginModal(false)} className="flex-1 py-4 text-slate-400 font-black uppercase text-[10px]">Cancelar</button>
+                <button type="button" onClick={() => setShowLoginModal(false)} className="flex-1 py-4 text-slate-400 font-black uppercase text-[10px]">Fechar</button>
                 <button type="submit" className="flex-[2] py-4 bg-indigo-600 text-white font-black rounded-2xl uppercase text-[10px] shadow-lg shadow-indigo-200">Entrar</button>
               </div>
             </form>
