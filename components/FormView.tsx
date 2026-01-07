@@ -240,7 +240,7 @@ export const FormView: React.FC<Props> = ({ onSave, svcList, onNewForm, isSyncin
                   <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-all rounded-2xl">
                     <Trash2 className="text-white w-8 h-8" />
                   </div>
-                </>
+                </div>
               )}
               <input type="file" accept="image/*" className="hidden" onChange={e => {
                 if (weeklyAcceptance) { setWeeklyAcceptance(undefined); return; }
