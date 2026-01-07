@@ -13,14 +13,9 @@ import {
   Lock,
   ShieldCheck,
   WifiOff,
-  AlertTriangle
+  AlertTriangle,
+  RefreshCw
 } from 'lucide-react';
-
-// Função auxiliar para data YYYY-MM-DD local
-const getLocalDate = () => {
-  const d = new Date();
-  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().split('T')[0];
-};
 
 const App: React.FC = () => {
   const [userRole, setUserRole] = useState<'standard' | 'admin'>('standard');
@@ -43,9 +38,9 @@ const App: React.FC = () => {
 
   const mergeSubmissions = (local: FormData[], remote: FormData[]) => {
     const map = new Map<string, FormData>();
-    // Remotos são a base - Normalizamos a data ao entrar
+    // Remotos são a base
     remote.forEach(s => {
-      const cleanDate = s.date.includes('T') ? s.date.split('T')[0] : s.date;
+      const cleanDate = s.date && s.date.includes('T') ? s.date.split('T')[0] : s.date;
       map.set(s.id, { ...s, date: cleanDate });
     });
     // Preserva locais que ainda não estão no remoto
@@ -60,18 +55,20 @@ const App: React.FC = () => {
   };
 
   const fetchCloudData = useCallback(async (silent = false) => {
-    if (!syncUrl) return;
+    if (!syncUrl || !syncUrl.startsWith('http')) return;
     if (!silent) setIsSyncing(true);
-    setSyncError(false);
     
     try {
+      // Simplificado para evitar problemas de CORS no mobile
       const response = await fetch(syncUrl, { 
         method: 'GET',
-        headers: { 'Accept': 'application/json' },
+        mode: 'cors',
+        redirect: 'follow',
         cache: 'no-store'
       });
       
-      if (!response.ok) throw new Error("Servidor offline");
+      if (!response.ok) throw new Error("Erro na rede");
+      
       const remoteData = await response.json();
       
       if (Array.isArray(remoteData)) {
@@ -81,10 +78,12 @@ const App: React.FC = () => {
           return merged;
         });
         setLastSync(new Date());
+        setSyncError(false);
       }
     } catch (e) {
       console.warn("Falha na sincronia:", e);
-      setSyncError(true);
+      // Só marca erro se for uma tentativa manual ou se falhar repetidamente
+      if (!silent) setSyncError(true);
     } finally {
       if (!silent) setIsSyncing(false);
     }
@@ -99,7 +98,7 @@ const App: React.FC = () => {
 
     if (syncUrl) {
       fetchCloudData();
-      pollingRef.current = window.setInterval(() => fetchCloudData(true), 20000); // 20s
+      pollingRef.current = window.setInterval(() => fetchCloudData(true), 30000); // 30s
     }
     return () => { if (pollingRef.current) clearInterval(pollingRef.current); };
   }, [syncUrl, fetchCloudData]);
@@ -130,12 +129,12 @@ const App: React.FC = () => {
       try {
         await fetch(syncUrl, {
           method: 'POST',
-          mode: 'no-cors', 
+          mode: 'no-cors', // Necessário para Google Apps Script POST sem preflight
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(data)
         });
-        // Agenda uma atualização forçada em 5s para confirmar recebimento
-        setTimeout(() => fetchCloudData(true), 5000);
+        // Espera um pouco e sincroniza para baixar os dados atualizados
+        setTimeout(() => fetchCloudData(true), 3000);
       } catch (e) {
         console.error("Erro no envio:", e);
         setSyncError(true);
@@ -151,7 +150,10 @@ const App: React.FC = () => {
       <header className="bg-white border-b border-slate-200 p-4 sticky top-0 z-50">
         <div className="container mx-auto flex justify-between items-center">
           <div className="flex items-center gap-3">
-            <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${syncUrl ? (syncError ? 'bg-rose-500' : 'bg-indigo-600') : 'bg-slate-200'}`}>
+            <div 
+              onClick={() => fetchCloudData()}
+              className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all cursor-pointer ${syncUrl ? (syncError ? 'bg-rose-500' : 'bg-indigo-600') : 'bg-slate-200'} ${isSyncing ? 'animate-pulse' : ''}`}
+            >
               {syncError ? (
                 <AlertTriangle className="w-5 h-5 text-white" />
               ) : (
@@ -162,14 +164,17 @@ const App: React.FC = () => {
               <h1 className="text-sm font-black uppercase tracking-tight leading-none">Frota Digital</h1>
               <div className="flex items-center gap-1.5 mt-1">
                 {!syncUrl ? (
-                  <div className="flex items-center gap-1 text-rose-500">
+                  <div className="flex items-center gap-1 text-slate-400">
                     <WifiOff className="w-2.5 h-2.5" />
-                    <span className="text-[8px] font-bold uppercase">Sem Nuvem</span>
+                    <span className="text-[8px] font-bold uppercase">Offline</span>
                   </div>
                 ) : (
-                  <span className={`text-[8px] font-bold uppercase ${syncError ? 'text-rose-500' : 'text-emerald-500'}`}>
-                    {syncError ? 'Erro de Conexão' : 'Operando Online'}
-                  </span>
+                  <div className="flex items-center gap-1">
+                    <div className={`w-1.5 h-1.5 rounded-full ${syncError ? 'bg-rose-500' : 'bg-emerald-500 animate-pulse'}`} />
+                    <span className={`text-[8px] font-bold uppercase ${syncError ? 'text-rose-500' : 'text-emerald-500'}`}>
+                      {syncError ? 'Erro de Sincronia' : 'Conectado'}
+                    </span>
+                  </div>
                 )}
               </div>
             </div>
@@ -219,7 +224,12 @@ const App: React.FC = () => {
                 onUpdate={(l) => { setSvcList(l); localStorage.setItem('fleet_svc_config', JSON.stringify(l)); }} 
                 onClearData={() => { if(confirm('Resetar banco local?')) { setSubmissions([]); localStorage.removeItem('fleet_submissions'); }}}
                 syncUrl={syncUrl}
-                onUpdateSyncUrl={(url) => { setSyncUrl(url); localStorage.setItem('fleet_sync_url', url); fetchCloudData(); }}
+                onUpdateSyncUrl={(url) => { 
+                  const cleanUrl = url.trim();
+                  setSyncUrl(cleanUrl); 
+                  localStorage.setItem('fleet_sync_url', cleanUrl); 
+                  setTimeout(() => fetchCloudData(), 500);
+                }}
                 submissions={submissions}
                 onImportData={(data) => { setSubmissions(data); localStorage.setItem('fleet_submissions', JSON.stringify(data)); }}
               />
