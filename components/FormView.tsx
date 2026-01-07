@@ -60,10 +60,8 @@ export const FormView: React.FC<Props> = ({ onSave, svcList, onNewForm, isSyncin
 
   const [weeklyAcceptance, setWeeklyAcceptance] = useState<string | undefined>();
 
-  // Forçar scroll para o topo em cada mudança de passo (importante para mobile)
   useEffect(() => {
     window.scrollTo(0, 0);
-    document.body.scrollTo(0, 0);
   }, [step]);
 
   const handleSvcChange = (val: string) => {
@@ -106,8 +104,7 @@ export const FormView: React.FC<Props> = ({ onSave, svcList, onNewForm, isSyncin
         setProblems(p => ({ ...p, media: [...p.media, ...newMedia] }));
       }
     } catch (e) {
-      console.error("Erro no processamento da imagem:", e);
-      alert("Erro ao carregar imagem. Tente novamente.");
+      alert("Erro ao ler imagem. Tente uma foto menor.");
     } finally {
       setIsProcessingImage(false);
     }
@@ -130,15 +127,15 @@ export const FormView: React.FC<Props> = ({ onSave, svcList, onNewForm, isSyncin
 
   if (isSubmitted) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 text-center px-6 animate-in zoom-in duration-300">
-        <div className="w-24 h-24 bg-emerald-500 rounded-full flex items-center justify-center mb-6 shadow-2xl">
-          <CheckCircle2 className="w-12 h-12 text-white" />
+      <div className="flex flex-col items-center justify-center py-20 text-center px-6">
+        <div className="w-20 h-20 bg-emerald-500 rounded-full flex items-center justify-center mb-6 shadow-xl">
+          <CheckCircle2 className="w-10 h-10 text-white" />
         </div>
-        <h2 className="text-3xl font-black text-slate-800 mb-2">Enviado!</h2>
-        <p className="text-slate-500 font-bold mb-10">O relatório do SVC {svc} foi processado.</p>
+        <h2 className="text-2xl font-black text-slate-800 mb-2 uppercase">Relatório Enviado</h2>
+        <p className="text-slate-500 font-bold mb-10 text-sm">Os dados do SVC {svc} foram salvos com sucesso.</p>
         <button 
           onClick={onNewForm}
-          className="w-full max-w-xs py-5 bg-indigo-600 text-white font-black rounded-3xl shadow-xl uppercase tracking-widest text-xs"
+          className="w-full py-5 bg-indigo-600 text-white font-black rounded-3xl shadow-xl uppercase tracking-widest text-xs"
         >
           Novo Reporte
         </button>
@@ -147,37 +144,44 @@ export const FormView: React.FC<Props> = ({ onSave, svcList, onNewForm, isSyncin
   }
 
   return (
-    <div className="pb-10 pt-4 relative">
+    <div className="pb-10 pt-4">
+      {/* Indicador Global de Carregamento */}
       {(isSyncing || isProcessingImage) && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[200] flex flex-col items-center justify-center text-white p-10">
-          <RefreshCw className="w-12 h-12 animate-spin text-indigo-400 mb-4" />
-          <h3 className="text-sm font-black uppercase tracking-widest">
-            {isProcessingImage ? 'Lendo Arquivo...' : 'Sincronizando...'}
-          </h3>
+        <div className="fixed inset-0 bg-indigo-900/80 backdrop-blur-md z-[300] flex flex-col items-center justify-center text-white p-10">
+          <RefreshCw className="w-12 h-12 animate-spin text-indigo-300 mb-4" />
+          <p className="text-xs font-black uppercase tracking-[0.3em]">
+            {isProcessingImage ? 'Processando Imagem...' : 'Sincronizando...'}
+          </p>
         </div>
       )}
 
-      {/* Indicador de Passos */}
+      {/* Título do Passo Atual */}
+      <div className="mb-4 px-1 flex justify-between items-center">
+        <span className="text-[10px] font-black text-indigo-600 uppercase tracking-widest bg-indigo-50 px-3 py-1 rounded-full">
+          Passo {step} de 7
+        </span>
+        {step === 6 && <span className="text-[10px] font-black text-rose-500 uppercase animate-pulse">Obrigatório</span>}
+      </div>
+
       <div className="mb-8 flex items-center justify-between gap-1 px-1">
         {[1, 2, 3, 4, 5, 6, 7].map(i => (
           <div key={i} className={`flex-1 h-1.5 rounded-full ${step >= i ? 'bg-indigo-600' : 'bg-slate-200'}`} />
         ))}
       </div>
 
-      <div className="min-h-[400px]">
-        {/* PASSO 1 */}
+      <div className="min-h-[420px]">
         {step === 1 && (
           <div className="space-y-6">
             <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tight">Identificação</h2>
             <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
               <label className="text-[10px] font-black text-slate-400 uppercase block mb-2">Data da Operação</label>
-              <input type="date" value={date} onChange={e => setDate(e.target.value)} className="w-full p-4 bg-slate-50 rounded-2xl font-black text-lg border-2 border-transparent focus:border-indigo-500 outline-none" />
+              <input type="date" value={date} onChange={e => setDate(e.target.value)} className="w-full p-4 bg-slate-50 rounded-2xl font-black text-lg outline-none" />
             </div>
             <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
               <label className="text-[10px] font-black text-slate-400 uppercase block mb-4">Selecione o SVC</label>
               <div className="grid grid-cols-2 gap-2 max-h-[250px] overflow-y-auto pr-2">
                 {svcList.map(s => (
-                  <button key={s.id} onClick={() => handleSvcChange(s.id)} className={`p-4 rounded-2xl font-black text-sm border-2 transition-all ${svc === s.id ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg' : 'bg-white border-slate-100 text-slate-500'}`}>
+                  <button key={s.id} onClick={() => handleSvcChange(s.id)} className={`p-4 rounded-2xl font-black text-sm border-2 transition-all ${svc === s.id ? 'bg-indigo-600 border-indigo-600 text-white shadow-md' : 'bg-white border-slate-100 text-slate-500'}`}>
                     {s.name}
                   </button>
                 ))}
@@ -186,7 +190,6 @@ export const FormView: React.FC<Props> = ({ onSave, svcList, onNewForm, isSyncin
           </div>
         )}
 
-        {/* PASSO 2 */}
         {step === 2 && (
           <div className="space-y-4">
             <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tight">Ofertas SPOT</h2>
@@ -203,16 +206,10 @@ export const FormView: React.FC<Props> = ({ onSave, svcList, onNewForm, isSyncin
           </div>
         )}
 
-        {/* PASSO 3 */}
         {step === 3 && (
           <div className="space-y-4">
             <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tight">Frota Parada</h2>
             <div className="space-y-3">
-              {fleetStatus.length === 0 && (
-                <div className="bg-indigo-50 p-10 rounded-3xl text-center border-2 border-dashed border-indigo-100">
-                  <span className="text-[10px] font-black text-indigo-400 uppercase">Selecione o SVC no passo 1</span>
-                </div>
-              )}
               {fleetStatus.map(v => (
                 <div key={v.plate} className={`p-5 rounded-3xl border-2 transition-all ${!v.running ? 'bg-rose-50 border-rose-500' : 'bg-white border-slate-50'}`}>
                   <div className="flex justify-between items-center">
@@ -221,7 +218,7 @@ export const FormView: React.FC<Props> = ({ onSave, svcList, onNewForm, isSyncin
                       <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">{v.category}</span>
                     </div>
                     <button onClick={() => setFleetStatus(prev => prev.map(p => p.plate === v.plate ? {...p, running: !p.running} : p))} 
-                      className={`px-4 py-3 rounded-xl font-black text-[10px] uppercase shadow-sm ${v.running ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-600 text-white'}`}>
+                      className={`px-4 py-3 rounded-xl font-black text-[10px] uppercase ${v.running ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-600 text-white'}`}>
                       {v.running ? 'Rodou' : 'Parado'}
                     </button>
                   </div>
@@ -241,7 +238,6 @@ export const FormView: React.FC<Props> = ({ onSave, svcList, onNewForm, isSyncin
           </div>
         )}
 
-        {/* PASSO 4 */}
         {step === 4 && (
           <div className="space-y-4">
              <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tight">Capacidade Base</h2>
@@ -260,7 +256,6 @@ export const FormView: React.FC<Props> = ({ onSave, svcList, onNewForm, isSyncin
           </div>
         )}
 
-        {/* PASSO 5 - PROBLEMAS (UPLOAD) */}
         {step === 5 && (
           <div className="space-y-6">
             <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tight">Problemas Operacionais</h2>
@@ -272,29 +267,17 @@ export const FormView: React.FC<Props> = ({ onSave, svcList, onNewForm, isSyncin
             />
             
             <div className="space-y-4">
-              {/* Botão de Upload com Overlay para Mobile */}
-              <div className="relative overflow-hidden flex flex-col items-center justify-center p-8 bg-white border-2 border-dashed border-slate-200 rounded-[2.5rem] active:bg-slate-50 transition-colors">
+              <label htmlFor="problems-upload" className="flex flex-col items-center justify-center p-8 bg-white border-2 border-dashed border-slate-200 rounded-[2.5rem] cursor-pointer active:bg-slate-100 transition-colors">
                 <Camera className="w-8 h-8 text-indigo-400 mb-2" />
-                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Clique aqui para anexar fotos</span>
-                {/* Input Invisível que ocupa toda a área */}
-                <input 
-                  type="file" 
-                  accept="image/*" 
-                  multiple
-                  className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10" 
-                  onChange={e => handleFileSelection(e.target.files, 'problems')} 
-                />
-              </div>
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Anexar Fotos de Problemas</span>
+                <input id="problems-upload" type="file" accept="image/*" multiple className="hidden" onChange={e => handleFileSelection(e.target.files, 'problems')} />
+              </label>
               
               <div className="grid grid-cols-3 gap-3">
                 {problems.media.map((img, i) => (
-                  <div key={i} className="aspect-square rounded-2xl overflow-hidden relative border border-slate-100 shadow-sm">
+                  <div key={i} className="aspect-square rounded-2xl overflow-hidden relative border border-slate-100">
                     <img src={img} className="w-full h-full object-cover" />
-                    <button 
-                      type="button"
-                      onClick={() => setProblems(p => ({...p, media: p.media.filter((_, idx) => idx !== i)}))} 
-                      className="absolute top-1 right-1 bg-rose-500 text-white p-1.5 rounded-lg shadow-lg"
-                    >
+                    <button type="button" onClick={() => setProblems(p => ({...p, media: p.media.filter((_, idx) => idx !== i)}))} className="absolute top-1 right-1 bg-rose-500 text-white p-1 rounded-lg shadow-lg">
                       <Trash2 className="w-3 h-3" />
                     </button>
                   </div>
@@ -304,46 +287,45 @@ export const FormView: React.FC<Props> = ({ onSave, svcList, onNewForm, isSyncin
           </div>
         )}
 
-        {/* PASSO 6 - ACEITE (VISIBILIDADE) */}
+        {/* PASSO 6 - ACEITE OPERACIONAL (REFORMULADO) */}
         {step === 6 && (
           <div className="space-y-6">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 bg-indigo-50 rounded-2xl flex items-center justify-center">
-                <FileCheck className="w-6 h-6 text-indigo-600" />
-              </div>
-              <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tight">Aceite Semanal</h2>
-            </div>
+            <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tight">Aceite Semanal</h2>
             
-            <div className="bg-indigo-900 text-white p-6 rounded-[2rem] shadow-lg">
-               <p className="text-[11px] font-bold uppercase leading-relaxed text-indigo-100">
-                 Obrigatório anexar o print do aceite semanal operacional para prosseguir.
-               </p>
+            <div className="bg-indigo-600 text-white p-5 rounded-[2rem] shadow-lg flex items-start gap-4">
+              <Info className="w-6 h-6 shrink-0 mt-1 text-indigo-200" />
+              <p className="text-[11px] font-bold uppercase leading-relaxed">
+                Para finalizar, anexe o print ou foto do aceite operacional desta semana.
+              </p>
             </div>
             
             {!weeklyAcceptance ? (
-              <div className="relative overflow-hidden flex flex-col items-center justify-center p-16 rounded-[2.5rem] border-4 border-dashed border-slate-200 bg-white active:bg-slate-50 transition-all text-center">
-                <Upload className="w-10 h-10 text-indigo-300 mb-4" />
-                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Clique aqui para subir print</span>
-                {/* Input Invisível Robusto */}
+              <label 
+                htmlFor="final-acceptance" 
+                className="flex flex-col items-center justify-center p-20 bg-white border-4 border-dashed border-slate-200 rounded-[3rem] cursor-pointer active:bg-indigo-50 transition-all text-center"
+              >
+                <Upload className="w-12 h-12 text-indigo-400 mb-4" />
+                <span className="text-[12px] font-black text-slate-500 uppercase tracking-widest">Tirar Foto ou Subir Print</span>
                 <input 
+                  id="final-acceptance" 
                   type="file" 
                   accept="image/*" 
-                  className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10" 
+                  className="hidden" 
                   onChange={e => handleFileSelection(e.target.files, 'acceptance')} 
                 />
-              </div>
+              </label>
             ) : (
               <div className="space-y-4">
-                <div className="relative rounded-[2.5rem] overflow-hidden shadow-xl border-4 border-white bg-slate-100">
-                  <img src={weeklyAcceptance} className="w-full max-h-[350px] object-contain" />
+                <div className="relative rounded-[2.5rem] overflow-hidden shadow-2xl border-4 border-white">
+                  <img src={weeklyAcceptance} className="w-full max-h-[400px] object-contain bg-slate-100" />
                   <div className="absolute inset-x-0 bottom-0 p-4 bg-gradient-to-t from-black/80 to-transparent">
                     <button 
                       type="button"
                       onClick={() => setWeeklyAcceptance(undefined)}
-                      className="w-full py-4 bg-rose-600 text-white rounded-2xl font-black uppercase text-[10px] flex items-center justify-center gap-3 shadow-2xl"
+                      className="w-full py-4 bg-rose-600 text-white rounded-2xl font-black uppercase text-[10px] flex items-center justify-center gap-3"
                     >
-                      <Trash2 className="w-5 h-5" />
-                      Remover e Alterar
+                      <Trash2 className="w-4 h-4" />
+                      Remover e escolher outra
                     </button>
                   </div>
                 </div>
@@ -352,10 +334,9 @@ export const FormView: React.FC<Props> = ({ onSave, svcList, onNewForm, isSyncin
           </div>
         )}
 
-        {/* PASSO 7 */}
         {step === 7 && (
           <div className="space-y-8">
-            <h2 className="text-2xl font-black text-slate-800 text-center uppercase tracking-tight">Revisão</h2>
+            <h2 className="text-2xl font-black text-slate-800 text-center uppercase tracking-tight">Revisão Final</h2>
             <div className="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm space-y-4">
                <div className="flex justify-between items-center border-b border-slate-50 pb-4">
                  <span className="text-[10px] font-black text-slate-400 uppercase">SVC</span>
@@ -366,9 +347,9 @@ export const FormView: React.FC<Props> = ({ onSave, svcList, onNewForm, isSyncin
                  <span className="font-black text-slate-800">{date.split('-').reverse().join('/')}</span>
                </div>
                <div className="flex justify-between items-center">
-                 <span className="text-[10px] font-black text-slate-400 uppercase">Frota Parada</span>
-                 <span className={`font-black ${fleetStatus.filter(f => !f.running).length > 0 ? 'text-rose-500' : 'text-emerald-500'}`}>
-                   {fleetStatus.filter(f => !f.running).length} veículos
+                 <span className="text-[10px] font-black text-slate-400 uppercase">Frota Ativa</span>
+                 <span className="font-black text-emerald-500">
+                   {fleetStatus.filter(f => f.running).length} veículos
                  </span>
                </div>
             </div>
@@ -377,18 +358,17 @@ export const FormView: React.FC<Props> = ({ onSave, svcList, onNewForm, isSyncin
               onClick={handleSubmit} 
               className="w-full py-8 bg-indigo-600 text-white font-black text-xl rounded-[3rem] shadow-2xl uppercase tracking-widest active:scale-95 transition-all"
             >
-              Enviar Agora
+              Confirmar e Enviar
             </button>
           </div>
         )}
       </div>
 
-      {/* Navegação Inferior */}
       <div className="mt-12 flex justify-between gap-3">
         {step > 1 && (
           <button 
             onClick={() => setStep(s => s - 1)} 
-            className="flex-1 py-5 bg-white text-slate-400 font-black rounded-[2rem] border border-slate-100 flex items-center justify-center gap-2 uppercase text-[10px] active:bg-slate-50"
+            className="flex-1 py-5 bg-white text-slate-400 font-black rounded-[2rem] border border-slate-100 flex items-center justify-center gap-2 uppercase text-[10px]"
           >
             <ChevronLeft className="w-4 h-4" /> Anterior
           </button>
@@ -397,12 +377,16 @@ export const FormView: React.FC<Props> = ({ onSave, svcList, onNewForm, isSyncin
           <button 
             disabled={(step === 1 && !svc) || (step === 6 && !weeklyAcceptance)}
             onClick={() => setStep(s => s + 1)} 
-            className={`flex-1 py-5 font-black rounded-[2rem] shadow-xl flex items-center justify-center gap-2 uppercase text-[10px] transition-all active:scale-[0.98] ${((!svc && step === 1) || (!weeklyAcceptance && step === 6)) ? 'bg-slate-200 text-slate-400 cursor-not-allowed' : 'bg-indigo-600 text-white'}`}
+            className={`flex-1 py-5 font-black rounded-[2rem] shadow-xl flex items-center justify-center gap-2 uppercase text-[10px] transition-all active:scale-[0.98] ${((!svc && step === 1) || (!weeklyAcceptance && step === 6)) ? 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none' : 'bg-indigo-600 text-white'}`}
           >
-            {step === 6 ? 'Revisar' : 'Próximo'} <ChevronRight className="w-4 h-4" />
+            {step === 6 ? 'Ir para Revisão' : 'Próximo'} <ChevronRight className="w-4 h-4" />
           </button>
         )}
       </div>
     </div>
   );
 };
+
+const Info = (props: any) => (
+  <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+);
