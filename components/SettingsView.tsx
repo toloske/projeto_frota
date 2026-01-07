@@ -11,7 +11,10 @@ import {
   ChevronDown, 
   ExternalLink,
   ShieldCheck,
-  Info
+  Info,
+  Copy,
+  Check,
+  Smartphone
 } from 'lucide-react';
 
 interface Props {
@@ -29,6 +32,13 @@ export const SettingsView: React.FC<Props> = ({
 }) => {
   const [newUrl, setNewUrl] = useState(syncUrl);
   const [showSyncInfo, setShowSyncInfo] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const handleCopyUrl = () => {
+    navigator.clipboard.writeText(syncUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   const exportLocalDb = () => {
     const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(submissions));
@@ -68,29 +78,45 @@ export const SettingsView: React.FC<Props> = ({
             <Cloud className="w-8 h-8 text-indigo-300" />
             <h2 className="text-2xl font-black uppercase tracking-tight leading-none">Sincronizar Nuvem</h2>
           </div>
-          <p className="text-indigo-200 text-[10px] font-bold uppercase tracking-widest mb-6 leading-relaxed">
-            Conecte o app ao Google Sheets para ver os dados em todos os aparelhos.
-          </p>
+          
+          <div className="bg-white/10 p-4 rounded-2xl mb-6 flex items-start gap-3 border border-white/10">
+            <Smartphone className="w-5 h-5 text-indigo-300 shrink-0 mt-1" />
+            <p className="text-indigo-200 text-[9px] font-bold uppercase leading-relaxed">
+              Atenção: Para o celular sincronizar com o computador, cole EXATAMENTE o mesmo link nos dois aparelhos.
+            </p>
+          </div>
           
           <div className="space-y-4">
-            <input 
-              type="text" 
-              placeholder="Colar URL do Web App (Google Scripts)"
-              value={newUrl}
-              onChange={(e) => setNewUrl(e.target.value)}
-              className="w-full p-4 bg-white/10 border-2 border-white/20 rounded-2xl outline-none focus:border-white transition-all text-xs font-mono"
-            />
+            <div className="relative">
+              <input 
+                type="text" 
+                placeholder="Colar URL do Web App (Google Scripts)"
+                value={newUrl}
+                onChange={(e) => setNewUrl(e.target.value)}
+                className="w-full p-4 bg-white/10 border-2 border-white/20 rounded-2xl outline-none focus:border-white transition-all text-xs font-mono pr-12"
+              />
+              {syncUrl && (
+                <button 
+                  onClick={handleCopyUrl}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 p-2 hover:bg-white/10 rounded-xl transition-colors"
+                >
+                  {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4 text-indigo-300" />}
+                </button>
+              )}
+            </div>
+            
             <button 
               onClick={() => onUpdateSyncUrl(newUrl)}
-              className="w-full py-4 bg-white text-indigo-900 font-black rounded-2xl shadow-lg uppercase text-[10px] tracking-widest"
+              className="w-full py-4 bg-white text-indigo-900 font-black rounded-2xl shadow-lg uppercase text-[10px] tracking-widest active:scale-95 transition-all"
             >
               Salvar Link de Sincronia
             </button>
+            
             <button 
               onClick={() => setShowSyncInfo(!showSyncInfo)}
               className="w-full flex items-center justify-center gap-2 text-[8px] font-bold uppercase text-indigo-300"
             >
-              <Info className="w-3 h-3" /> Como conseguir esse link?
+              <Info className="w-3 h-3" /> Como configurar a planilha?
             </button>
           </div>
 
@@ -100,10 +126,10 @@ export const SettingsView: React.FC<Props> = ({
               <ol className="list-decimal list-inside space-y-2 text-indigo-100">
                 <li>Abra uma Planilha Google.</li>
                 <li>Vá em Extensões {'>'} Apps Script.</li>
-                <li>Cole o código que enviei no chat (Passo 2).</li>
+                <li>Crie um script com funções doGet(e) e doPost(e).</li>
                 <li>Clique em Implantar {'>'} Nova Implantação {'>'} App Web.</li>
                 <li>Em "Quem pode acessar", selecione "Qualquer pessoa".</li>
-                <li>Copie o link gerado e cole no campo acima.</li>
+                <li>Copie o link gerado e cole no campo acima em cada aparelho.</li>
               </ol>
             </div>
           )}
@@ -141,7 +167,7 @@ export const SettingsView: React.FC<Props> = ({
 
           <button 
             onClick={onClearData}
-            className="flex items-center justify-center gap-3 p-5 bg-rose-50 hover:bg-rose-100 rounded-2xl border-2 border-transparent transition-all col-span-full md:col-span-1"
+            className="flex items-center justify-center gap-3 p-5 bg-rose-50 hover:bg-rose-100 rounded-2xl border-2 border-transparent transition-all col-span-full"
           >
             <Trash2 className="w-5 h-5 text-rose-500" />
             <div className="text-left">

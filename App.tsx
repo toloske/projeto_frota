@@ -11,7 +11,9 @@ import {
   Settings, 
   CloudLightning,
   Lock,
-  ShieldCheck
+  ShieldCheck,
+  WifiOff,
+  AlertTriangle
 } from 'lucide-react';
 
 const App: React.FC = () => {
@@ -22,31 +24,59 @@ const App: React.FC = () => {
   const [formKey, setFormKey] = useState(0);
   
   const [syncUrl, setSyncUrl] = useState<string>(
-    ((import.meta as any).env?.VITE_SYNC_URL as string) || localStorage.getItem('fleet_sync_url') || ''
+    localStorage.getItem('fleet_sync_url') || ''
   );
   
   const [isSyncing, setIsSyncing] = useState(false);
   const [lastSync, setLastSync] = useState<Date | null>(null);
+  const [syncError, setSyncError] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [passwordInput, setPasswordInput] = useState('');
   
   const pollingRef = useRef<number | null>(null);
 
+  // Função para unir dados locais e remotos sem perdas
+  const mergeSubmissions = (local: FormData[], remote: FormData[]) => {
+    const map = new Map<string, FormData>();
+    // Primeiro adiciona os remotos (verdade absoluta da nuvem)
+    remote.forEach(s => map.set(s.id, s));
+    // Depois adiciona os locais que podem ainda não estar na nuvem
+    local.forEach(s => {
+      if (!map.has(s.id)) {
+        map.set(s.id, s);
+      }
+    });
+    return Array.from(map.values()).sort((a, b) => 
+      new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+    );
+  };
+
   const fetchCloudData = useCallback(async (silent = false) => {
     if (!syncUrl) return;
     if (!silent) setIsSyncing(true);
+    setSyncError(false);
     
     try {
-      const response = await fetch(syncUrl, { cache: 'no-store' });
-      const data = await response.json();
+      const response = await fetch(syncUrl, { 
+        method: 'GET',
+        cache: 'no-store'
+      });
       
-      if (Array.isArray(data)) {
-        setSubmissions(data);
+      if (!response.ok) throw new Error("Erro na resposta do servidor");
+      
+      const remoteData = await response.json();
+      
+      if (Array.isArray(remoteData)) {
+        setSubmissions(currentLocal => {
+          const merged = mergeSubmissions(currentLocal, remoteData);
+          localStorage.setItem('fleet_submissions', JSON.stringify(merged));
+          return merged;
+        });
         setLastSync(new Date());
-        localStorage.setItem('fleet_submissions', JSON.stringify(data));
       }
     } catch (e) {
-      console.warn("Sync background:", e);
+      console.warn("Sync Error:", e);
+      setSyncError(true);
     } finally {
       if (!silent) setIsSyncing(false);
     }
@@ -58,7 +88,7 @@ const App: React.FC = () => {
 
     if (syncUrl) {
       fetchCloudData();
-      pollingRef.current = window.setInterval(() => fetchCloudData(true), 60000);
+      pollingRef.current = window.setInterval(() => fetchCloudData(true), 30000); // 30s
     }
     return () => { if (pollingRef.current) clearInterval(pollingRef.current); };
   }, [syncUrl, fetchCloudData]);
@@ -81,6 +111,7 @@ const App: React.FC = () => {
   };
 
   const handleSaveSubmission = async (data: FormData) => {
+    // Salva localmente IMEDIATAMENTE para evitar perda se a internet falhar
     const updated = [data, ...submissions];
     setSubmissions(updated);
     localStorage.setItem('fleet_submissions', JSON.stringify(updated));
@@ -88,16 +119,20 @@ const App: React.FC = () => {
     if (syncUrl) {
       setIsSyncing(true);
       try {
+        // Envio para Google Apps Script
         await fetch(syncUrl, {
           method: 'POST',
-          mode: 'no-cors',
+          mode: 'no-cors', // GAS exige no-cors para POST de domínios diferentes
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(data)
         });
-        setTimeout(() => fetchCloudData(true), 2000);
+        
+        // Aguarda um pouco para o GAS processar e atualiza
+        setTimeout(() => fetchCloudData(true), 3000);
         return true;
       } catch (e) {
         console.error("Erro ao enviar:", e);
+        setSyncError(true);
         return false;
       } finally {
         setIsSyncing(false);
@@ -111,14 +146,27 @@ const App: React.FC = () => {
       <header className="bg-white border-b border-slate-200 p-4 sticky top-0 z-50">
         <div className="container mx-auto flex justify-between items-center">
           <div className="flex items-center gap-3">
-            <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${syncUrl ? 'bg-indigo-600' : 'bg-slate-200'}`}>
-              <CloudLightning className={`w-5 h-5 ${syncUrl ? 'text-white' : 'text-slate-400'}`} />
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${syncUrl ? (syncError ? 'bg-rose-500' : 'bg-indigo-600') : 'bg-slate-200'}`}>
+              {syncError ? (
+                <AlertTriangle className="w-5 h-5 text-white" />
+              ) : (
+                <CloudLightning className={`w-5 h-5 ${syncUrl ? 'text-white' : 'text-slate-400'}`} />
+              )}
             </div>
             <div>
               <h1 className="text-sm font-black uppercase tracking-tight leading-none">Frota Digital</h1>
-              <p className="text-[9px] font-bold text-slate-400 uppercase mt-1">
-                {syncUrl ? 'Conectado à Central' : 'Modo Offline'}
-              </p>
+              <div className="flex items-center gap-1.5 mt-1">
+                {!syncUrl ? (
+                  <div className="flex items-center gap-1 text-rose-500">
+                    <WifiOff className="w-2.5 h-2.5" />
+                    <span className="text-[8px] font-bold uppercase">Sem Sincronia</span>
+                  </div>
+                ) : (
+                  <span className={`text-[8px] font-bold uppercase ${syncError ? 'text-rose-500' : 'text-emerald-500'}`}>
+                    {syncError ? 'Erro de Conexão' : 'Conectado à Central'}
+                  </span>
+                )}
+              </div>
             </div>
           </div>
           
