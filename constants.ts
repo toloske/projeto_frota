@@ -5,7 +5,7 @@ import { SVCConfig } from './types';
  * IMPORTANTE: COLE O SEU LINK DO GOOGLE APPS SCRIPT ABAIXO
  * Sem este link, o computador e o celular não vão conversar.
  */
-export const GLOBAL_SYNC_URL = ""; 
+export const GLOBAL_SYNC_URL = "https://script.google.com/macros/s/AKfycbwv0eF_HC0KBzpq__AGixTBWmoYMRBNKi6WYTXHrSbqgjlE6tGEZVeUDfpaAFHwPH4Z/exec"; 
 
 export const VEHICLE_CATEGORIES = [
   'BULK - VAN EQUIPE ÚNICA POOL',
