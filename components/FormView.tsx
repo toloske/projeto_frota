@@ -14,8 +14,7 @@ import {
   Info,
   Database,
   Cloud,
-  Layers,
-  LayoutGrid
+  Layers
 } from 'lucide-react';
 
 const getLocalDate = () => {
@@ -24,7 +23,7 @@ const getLocalDate = () => {
 };
 
 interface Props {
-  onSave: (data: FormData) => void;
+  onSave: (data: FormData) => Promise<boolean>;
   svcList: SVCConfig[];
   configSource: 'default' | 'cloud';
   onNewForm: () => void;
@@ -35,6 +34,7 @@ interface Props {
 export const FormView: React.FC<Props> = ({ onSave, svcList, configSource, onNewForm, isSyncing, onManualSync }) => {
   const [step, setStep] = useState(1);
   const [isProcessingImage, setIsProcessingImage] = useState(false);
+  const [isSending, setIsSending] = useState(false);
   const [date, setDate] = useState(getLocalDate());
   const [svc, setSvc] = useState('');
   
@@ -95,8 +95,10 @@ export const FormView: React.FC<Props> = ({ onSave, svcList, configSource, onNew
 
   const handleSubmit = async (e: React.MouseEvent) => {
     e.preventDefault();
+    if (isSending) return;
     if (!svc) { alert("Selecione um SVC."); return; }
     
+    setIsSending(true);
     const finalData: FormData = {
       id: `REP-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`.toUpperCase(),
       timestamp: new Date().toISOString(),
@@ -106,18 +108,20 @@ export const FormView: React.FC<Props> = ({ onSave, svcList, configSource, onNew
     
     try {
       await onSave(finalData);
-      alert("Relatório enviado com sucesso!");
-      // Reset total para a primeira página
+      alert("✅ Relatório enviado com sucesso!");
+      // Força o retorno para a primeira página resetando o componente
       onNewForm();
     } catch (err) {
-      alert("Erro ao salvar. Verifique sua conexão.");
+      alert("❌ Erro ao enviar relatório. Tente novamente.");
+    } finally {
+      setIsSending(false);
     }
   };
 
   const groupedFleet = useMemo(() => {
     const groups: Record<string, VehicleStatus[]> = {};
     fleetStatus.forEach(v => {
-      const cat = v.category || 'Outros';
+      const cat = v.category || 'Veículo Operacional';
       if (!groups[cat]) groups[cat] = [];
       groups[cat].push(v);
     });
@@ -321,7 +325,13 @@ export const FormView: React.FC<Props> = ({ onSave, svcList, configSource, onNew
                  <span className="font-black text-emerald-500">{fleetStatus.filter(f => f.running).length} Rodando</span>
                </div>
             </div>
-            <button onClick={handleSubmit} className="w-full py-8 bg-indigo-600 text-white font-black text-xl rounded-[3rem] shadow-2xl uppercase tracking-widest active:scale-95 transition-all">Enviar Relatório</button>
+            <button 
+              onClick={handleSubmit} 
+              disabled={isSending}
+              className={`w-full py-8 text-white font-black text-xl rounded-[3rem] shadow-2xl uppercase tracking-widest active:scale-95 transition-all flex items-center justify-center gap-3 ${isSending ? 'bg-indigo-400 cursor-not-allowed' : 'bg-indigo-600'}`}
+            >
+              {isSending ? <RefreshCw className="w-6 h-6 animate-spin" /> : 'Enviar Relatório'}
+            </button>
           </div>
         )}
       </div>
