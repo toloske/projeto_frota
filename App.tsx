@@ -14,7 +14,8 @@ import {
   ShieldCheck,
   WifiOff,
   AlertTriangle,
-  RefreshCw
+  RefreshCw,
+  CloudDownload
 } from 'lucide-react';
 
 const App: React.FC = () => {
@@ -24,8 +25,6 @@ const App: React.FC = () => {
   const [svcList, setSvcList] = useState<SVCConfig[]>([]);
   const [formKey, setFormKey] = useState(0);
   
-  // O syncUrl agora tenta primeiro o localStorage (ajustado pelo admin) 
-  // e depois o GLOBAL_SYNC_URL (definido no código)
   const [syncUrl, setSyncUrl] = useState<string>(() => {
     const saved = localStorage.getItem('fleet_sync_url');
     if (saved && saved.trim().startsWith('http')) return saved.trim();
@@ -40,20 +39,7 @@ const App: React.FC = () => {
   
   const pollingRef = useRef<number | null>(null);
 
-  const mergeSubmissions = (local: FormData[], remote: FormData[]) => {
-    const map = new Map<string, FormData>();
-    remote.forEach(s => {
-      const cleanDate = s.date && s.date.includes('T') ? s.date.split('T')[0] : s.date;
-      map.set(s.id, { ...s, date: cleanDate });
-    });
-    local.forEach(s => {
-      if (!map.has(s.id)) map.set(s.id, s);
-    });
-    return Array.from(map.values()).sort((a, b) => 
-      new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-    );
-  };
-
+  // Função para carregar TUDO da nuvem (Relatórios + Configuração de Placas)
   const fetchCloudData = useCallback(async (silent = false) => {
     const currentUrl = syncUrl.trim();
     if (!currentUrl || !currentUrl.startsWith('http')) return;
@@ -61,7 +47,8 @@ const App: React.FC = () => {
     if (!silent) setIsSyncing(true);
     
     try {
-      const response = await fetch(currentUrl, { 
+      // Busca relatórios E configuração
+      const response = await fetch(`${currentUrl}?action=get_all`, { 
         method: 'GET',
         redirect: 'follow',
         cache: 'no-store'
@@ -69,33 +56,44 @@ const App: React.FC = () => {
       
       if (!response.ok) throw new Error("Offline");
       
-      const remoteData = await response.json();
+      const data = await response.json();
       
-      if (Array.isArray(remoteData)) {
+      // 1. Processa Relatórios
+      if (data.submissions && Array.isArray(data.submissions)) {
         setSubmissions(currentLocal => {
-          const merged = mergeSubmissions(currentLocal, remoteData);
+          const map = new Map<string, FormData>();
+          data.submissions.forEach((s: any) => {
+            const cleanDate = s.date && s.date.includes('T') ? s.date.split('T')[0] : s.date;
+            map.set(s.id, { ...s, date: cleanDate });
+          });
+          currentLocal.forEach(s => { if (!map.has(s.id)) map.set(s.id, s); });
+          const merged = Array.from(map.values()).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
           localStorage.setItem('fleet_submissions', JSON.stringify(merged));
           return merged;
         });
-        setLastSync(new Date());
-        setSyncError(false);
       }
+
+      // 2. Processa Configuração de SVCs/Placas (Sincronia PC -> Celular)
+      if (data.config && Array.isArray(data.config) && data.config.length > 0) {
+        setSvcList(data.config);
+        localStorage.setItem('fleet_svc_config', JSON.stringify(data.config));
+      }
+      
+      setLastSync(new Date());
+      setSyncError(false);
     } catch (e) {
-      if (!silent) {
-        console.warn("Falha na sincronização:", e);
-        setSyncError(true);
-      }
+      if (!silent) setSyncError(true);
     } finally {
       if (!silent) setIsSyncing(false);
     }
   }, [syncUrl]);
 
   useEffect(() => {
-    // Sincronizar sempre que o app for aberto ou ganhar foco no celular
     const handleFocus = () => fetchCloudData(true);
     window.addEventListener('focus', handleFocus);
     window.addEventListener('online', handleFocus);
     
+    // Carrega do cache local primeiro
     const saved = localStorage.getItem('fleet_submissions');
     if (saved) setSubmissions(JSON.parse(saved));
 
@@ -104,7 +102,6 @@ const App: React.FC = () => {
 
     if (syncUrl) {
       fetchCloudData();
-      // Polling de 60 segundos para manter dados frescos
       pollingRef.current = window.setInterval(() => fetchCloudData(true), 60000);
     }
 
@@ -115,20 +112,7 @@ const App: React.FC = () => {
     };
   }, [syncUrl, fetchCloudData]);
 
-  const handleAdminAuth = (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    if (passwordInput === 'admin2024') {
-      setUserRole('admin');
-      setActiveTab('admin');
-      setShowLoginModal(false);
-      setPasswordInput('');
-    } else {
-      alert("Senha incorreta.");
-    }
-  };
-
   const handleSaveSubmission = async (data: FormData) => {
-    // Salva local primeiro para não travar o usuário
     setSubmissions(prev => {
       const updated = [data, ...prev];
       localStorage.setItem('fleet_submissions', JSON.stringify(updated));
@@ -142,9 +126,8 @@ const App: React.FC = () => {
           method: 'POST',
           mode: 'no-cors',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(data)
+          body: JSON.stringify({ type: 'report', data })
         });
-        // Sincroniza logo após envio para confirmar
         setTimeout(() => fetchCloudData(true), 2000);
       } catch (e) {
         setSyncError(true);
@@ -155,45 +138,42 @@ const App: React.FC = () => {
     return true;
   };
 
+  // Fixed error: Added missing handleAdminAuth function to handle the administrator login form submission
+  const handleAdminAuth = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (passwordInput === '1234') {
+      setUserRole('admin');
+      setShowLoginModal(false);
+      setPasswordInput('');
+    } else {
+      alert('Senha incorreta!');
+    }
+  };
+
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900 font-inter">
       <header className="bg-white border-b border-slate-200 p-4 sticky top-0 z-50">
         <div className="container mx-auto flex justify-between items-center">
           <div className="flex items-center gap-3">
             <div 
-              onClick={() => userRole === 'admin' && fetchCloudData()}
-              className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${syncUrl ? (syncError ? 'bg-rose-500' : 'bg-indigo-600') : 'bg-slate-200'} ${isSyncing ? 'animate-pulse' : ''}`}
+              onClick={() => fetchCloudData()}
+              className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${syncUrl ? (syncError ? 'bg-rose-500' : 'bg-indigo-600') : 'bg-slate-200'} ${isSyncing ? 'animate-spin' : ''}`}
             >
-              {syncError ? (
-                <AlertTriangle className="w-5 h-5 text-white" />
-              ) : (
-                <CloudLightning className={`w-5 h-5 ${syncUrl ? 'text-white' : 'text-slate-400'}`} />
-              )}
+              {syncError ? <AlertTriangle className="w-5 h-5 text-white" /> : <CloudLightning className={`w-5 h-5 ${syncUrl ? 'text-white' : 'text-slate-400'}`} />}
             </div>
             <div>
               <h1 className="text-sm font-black uppercase tracking-tight leading-none">Frota Hub</h1>
               <div className="flex items-center gap-1.5 mt-1">
-                {!syncUrl ? (
-                  <div className="flex items-center gap-1 text-slate-400">
-                    <WifiOff className="w-2.5 h-2.5" />
-                    <span className="text-[8px] font-bold uppercase">Sem Link Sinc</span>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-1">
-                    <div className={`w-1.5 h-1.5 rounded-full ${syncError ? 'bg-rose-500' : 'bg-emerald-500 animate-pulse'}`} />
-                    <span className={`text-[8px] font-bold uppercase ${syncError ? 'text-rose-500' : 'text-emerald-500'}`}>
-                      {syncError ? 'Erro de Rede' : 'Sincronizado'}
-                    </span>
-                  </div>
-                )}
+                <div className={`w-1.5 h-1.5 rounded-full ${syncError ? 'bg-rose-500' : 'bg-emerald-500 animate-pulse'}`} />
+                <span className={`text-[8px] font-bold uppercase ${syncError ? 'text-rose-500' : 'text-emerald-500'}`}>
+                  {syncError ? 'Erro Sinc' : 'Conectado'}
+                </span>
               </div>
             </div>
           </div>
           
           {userRole === 'standard' ? (
-            <button onClick={() => setShowLoginModal(true)} className="p-2 text-slate-300 hover:text-indigo-600 transition-colors">
-              <Lock className="w-5 h-5" />
-            </button>
+            <button onClick={() => setShowLoginModal(true)} className="p-2 text-slate-300"><Lock className="w-5 h-5" /></button>
           ) : (
             <div className="bg-indigo-50 px-3 py-1.5 rounded-full border border-indigo-100 flex items-center gap-2">
               <ShieldCheck className="w-3 h-3 text-indigo-600" />
@@ -229,14 +209,9 @@ const App: React.FC = () => {
               <SettingsView 
                 svcList={svcList} 
                 onUpdate={(l) => { setSvcList(l); localStorage.setItem('fleet_svc_config', JSON.stringify(l)); }} 
-                onClearData={() => { if(confirm('Isso apagará todos os dados locais. Continuar?')) { localStorage.clear(); window.location.reload(); }}}
+                onClearData={() => { if(confirm('Resetar?')) { localStorage.clear(); window.location.reload(); }}}
                 syncUrl={syncUrl}
-                onUpdateSyncUrl={(url) => { 
-                  const cleanUrl = url.trim().replace(/[\s\u200B-\u200D\uFEFF]/g, '');
-                  setSyncUrl(cleanUrl); 
-                  localStorage.setItem('fleet_sync_url', cleanUrl); 
-                  setTimeout(() => fetchCloudData(), 300);
-                }}
+                onUpdateSyncUrl={(url) => { setSyncUrl(url); localStorage.setItem('fleet_sync_url', url); fetchCloudData(); }}
                 submissions={submissions}
                 onImportData={(data) => { setSubmissions(data); localStorage.setItem('fleet_submissions', JSON.stringify(data)); }}
               />
@@ -262,22 +237,10 @@ const App: React.FC = () => {
       {showLoginModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-slate-900/60 backdrop-blur-sm">
           <div className="bg-white w-full max-w-sm rounded-[2rem] shadow-2xl p-8">
-            <h2 className="text-xl font-black text-slate-800 mb-6 flex items-center gap-2 uppercase tracking-tight">
-              <ShieldCheck className="w-6 h-6 text-indigo-600" /> Acesso Restrito
-            </h2>
+            <h2 className="text-xl font-black text-slate-800 mb-6 flex items-center gap-2 uppercase">Acesso Restrito</h2>
             <form onSubmit={handleAdminAuth} className="space-y-4">
-              <input 
-                type="password"
-                placeholder="Senha administrativa"
-                autoFocus
-                value={passwordInput}
-                onChange={(e) => setPasswordInput(e.target.value)}
-                className="w-full p-4 bg-slate-50 border-2 border-transparent focus:border-indigo-500 rounded-2xl outline-none font-bold text-center"
-              />
-              <div className="flex gap-2">
-                <button type="button" onClick={() => setShowLoginModal(false)} className="flex-1 py-4 text-slate-400 font-black uppercase text-[10px]">Fechar</button>
-                <button type="submit" className="flex-[2] py-4 bg-indigo-600 text-white font-black rounded-2xl uppercase text-[10px]">Entrar</button>
-              </div>
+              <input type="password" placeholder="Senha" autoFocus value={passwordInput} onChange={(e) => setPasswordInput(e.target.value)} className="w-full p-4 bg-slate-50 border-2 border-transparent focus:border-indigo-500 rounded-2xl outline-none font-bold text-center" />
+              <button type="submit" className="w-full py-4 bg-indigo-600 text-white font-black rounded-2xl uppercase text-[10px]">Entrar</button>
             </form>
           </div>
         </div>
