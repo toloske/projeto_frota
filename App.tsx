@@ -35,35 +35,31 @@ const App: React.FC = () => {
 
   const fetchCloudData = useCallback(async (silent = false) => {
     if (!syncUrl || !syncUrl.startsWith('http')) {
-      console.warn("Sincronização desativada: GLOBAL_SYNC_URL não configurada.");
       return;
     }
 
     if (!silent) setIsSyncing(true);
     
     try {
-      // Usamos um timestamp para evitar cache do navegador
       const response = await fetch(`${syncUrl}?action=get_all&t=${Date.now()}`, { 
         method: 'GET',
-        redirect: 'follow'
+        redirect: 'follow',
+        cache: 'no-store'
       });
       
       if (!response.ok) throw new Error("Erro na rede");
       
       const data = await response.json();
       
-      // 1. Atualiza Relatórios
+      // 1. Relatórios
       if (data.submissions && Array.isArray(data.submissions)) {
         setSubmissions(currentLocal => {
           const map = new Map<string, FormData>();
-          // Adiciona os da nuvem primeiro
           data.submissions.forEach((s: any) => {
             const cleanDate = s.date && s.date.includes('T') ? s.date.split('T')[0] : s.date;
             map.set(s.id, { ...s, date: cleanDate });
           });
-          // Mantém os locais que ainda não subiram (se houver)
           currentLocal.forEach(s => { if (!map.has(s.id)) map.set(s.id, s); });
-          
           const merged = Array.from(map.values()).sort((a, b) => 
             new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
           );
@@ -72,7 +68,7 @@ const App: React.FC = () => {
         });
       }
 
-      // 2. Atualiza Placas (Nuvem -> Celular)
+      // 2. Configuração de Placas (O que o celular precisa)
       if (data.config && Array.isArray(data.config) && data.config.length > 0) {
         setSvcList(data.config);
         localStorage.setItem('fleet_svc_config', JSON.stringify(data.config));
@@ -82,21 +78,19 @@ const App: React.FC = () => {
       setSyncError(false);
     } catch (e) {
       if (!silent) setSyncError(true);
-      console.error("Erro ao sincronizar:", e);
+      console.error("Sync Failure:", e);
     } finally {
       if (!silent) setIsSyncing(false);
     }
   }, [syncUrl]);
 
   useEffect(() => {
-    // Carrega cache local imediato
     const savedSubmissions = localStorage.getItem('fleet_submissions');
     if (savedSubmissions) setSubmissions(JSON.parse(savedSubmissions));
 
     const savedSvc = localStorage.getItem('fleet_svc_config');
     setSvcList(savedSvc ? JSON.parse(savedSvc) : DEFAULT_SVC_LIST);
 
-    // Tenta sincronizar com a planilha
     if (syncUrl) {
       fetchCloudData();
       pollingRef.current = window.setInterval(() => fetchCloudData(true), 60000);
@@ -114,7 +108,6 @@ const App: React.FC = () => {
   }, [syncUrl, fetchCloudData]);
 
   const handleSaveSubmission = async (data: FormData) => {
-    // Salva local primeiro para garantir que o usuário não perca nada
     setSubmissions(prev => {
       const updated = [data, ...prev];
       localStorage.setItem('fleet_submissions', JSON.stringify(updated));
@@ -124,35 +117,20 @@ const App: React.FC = () => {
     if (syncUrl) {
       setIsSyncing(true);
       try {
-        // Envio como TEXT/PLAIN para evitar CORS Preflight no Google Scripts
         await fetch(syncUrl, {
           method: 'POST',
-          mode: 'no-cors', // Importante para Google Scripts
+          mode: 'no-cors',
           headers: { 'Content-Type': 'text/plain' },
           body: JSON.stringify({ type: 'report', data })
         });
-        
-        // Aguarda um pouco e atualiza para confirmar que subiu
-        setTimeout(() => fetchCloudData(true), 1500);
+        setTimeout(() => fetchCloudData(true), 2000);
       } catch (e) {
         setSyncError(true);
-        console.error("Erro ao enviar reporte:", e);
       } finally {
         setIsSyncing(false);
       }
     }
     return true;
-  };
-
-  const handleAdminAuth = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (passwordInput === '1234') {
-      setUserRole('admin');
-      setShowLoginModal(false);
-      setPasswordInput('');
-    } else {
-      alert('Senha incorreta!');
-    }
   };
 
   return (
@@ -169,10 +147,16 @@ const App: React.FC = () => {
             <div>
               <h1 className="text-sm font-black uppercase tracking-tight leading-none">Frota Hub</h1>
               <div className="flex items-center gap-1.5 mt-1">
-                <div className={`w-1.5 h-1.5 rounded-full ${syncError ? 'bg-rose-500' : 'bg-emerald-500 animate-pulse'}`} />
-                <span className={`text-[8px] font-bold uppercase ${syncError ? 'text-rose-500' : 'text-emerald-500'}`}>
-                  {syncError ? 'Erro Sync' : (isSyncing ? 'Sincronizando' : 'Conectado')}
-                </span>
+                {!syncUrl ? (
+                  <span className="text-[7px] font-black text-rose-500 uppercase">URL não configurada</span>
+                ) : (
+                  <>
+                    <div className={`w-1.5 h-1.5 rounded-full ${syncError ? 'bg-rose-500' : 'bg-emerald-500 animate-pulse'}`} />
+                    <span className={`text-[8px] font-bold uppercase ${syncError ? 'text-rose-500' : 'text-emerald-500'}`}>
+                      {syncError ? 'Erro Conexão' : 'Online'}
+                    </span>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -196,6 +180,7 @@ const App: React.FC = () => {
             svcList={svcList} 
             onNewForm={() => setFormKey(k => k + 1)}
             isSyncing={isSyncing}
+            onManualSync={() => fetchCloudData()}
           />
         )}
         
@@ -243,10 +228,14 @@ const App: React.FC = () => {
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-slate-900/60 backdrop-blur-sm">
           <div className="bg-white w-full max-w-sm rounded-[2rem] shadow-2xl p-8">
             <h2 className="text-xl font-black text-slate-800 mb-6 flex items-center gap-2 uppercase text-center">Gestor Frota</h2>
-            <form onSubmit={handleAdminAuth} className="space-y-4">
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              if (passwordInput === '1234') { setUserRole('admin'); setShowLoginModal(false); setPasswordInput(''); }
+              else { alert('Senha incorreta!'); }
+            }} className="space-y-4">
               <input type="password" placeholder="Senha" autoFocus value={passwordInput} onChange={(e) => setPasswordInput(e.target.value)} className="w-full p-4 bg-slate-50 border-2 border-transparent focus:border-indigo-500 rounded-2xl outline-none font-bold text-center" />
-              <button type="submit" className="w-full py-4 bg-indigo-600 text-white font-black rounded-2xl uppercase text-[10px]">Entrar no Painel</button>
-              <button type="button" onClick={() => setShowLoginModal(false)} className="w-full text-[9px] font-black text-slate-300 uppercase">Voltar ao Formulário</button>
+              <button type="submit" className="w-full py-4 bg-indigo-600 text-white font-black rounded-2xl uppercase text-[10px]">Entrar</button>
+              <button type="button" onClick={() => setShowLoginModal(false)} className="w-full text-[9px] font-black text-slate-300 uppercase">Voltar</button>
             </form>
           </div>
         </div>

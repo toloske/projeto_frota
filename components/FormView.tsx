@@ -3,21 +3,16 @@ import React, { useState, useEffect } from 'react';
 import { VEHICLE_CATEGORIES, STOPPED_JUSTIFICATIONS } from '../constants';
 import { FormData, VehicleStatus, SVCConfig } from '../types';
 import { 
-  Calendar, 
   MapPin, 
   Truck, 
-  AlertCircle, 
   CheckCircle2, 
   ChevronRight, 
   ChevronLeft,
   Camera,
   Trash2,
-  Send,
-  Loader2,
   RefreshCw,
-  FileCheck,
   Upload,
-  Image as ImageIcon
+  Info
 } from 'lucide-react';
 
 const getLocalDate = () => {
@@ -30,9 +25,10 @@ interface Props {
   svcList: SVCConfig[];
   onNewForm: () => void;
   isSyncing?: boolean;
+  onManualSync?: () => void;
 }
 
-export const FormView: React.FC<Props> = ({ onSave, svcList, onNewForm, isSyncing }) => {
+export const FormView: React.FC<Props> = ({ onSave, svcList, onNewForm, isSyncing, onManualSync }) => {
   const [step, setStep] = useState(1);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [isProcessingImage, setIsProcessingImage] = useState(false);
@@ -60,9 +56,7 @@ export const FormView: React.FC<Props> = ({ onSave, svcList, onNewForm, isSyncin
 
   const [weeklyAcceptance, setWeeklyAcceptance] = useState<string | undefined>();
 
-  useEffect(() => {
-    window.scrollTo(0, 0);
-  }, [step]);
+  useEffect(() => { window.scrollTo(0, 0); }, [step]);
 
   const handleSvcChange = (val: string) => {
     setSvc(val);
@@ -78,10 +72,8 @@ export const FormView: React.FC<Props> = ({ onSave, svcList, onNewForm, isSyncin
 
   const handleFileSelection = async (files: FileList | null, type: 'problems' | 'acceptance') => {
     if (!files || files.length === 0) return;
-    
     setIsProcessingImage(true);
     const newMedia: string[] = [];
-
     try {
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
@@ -91,36 +83,22 @@ export const FormView: React.FC<Props> = ({ onSave, svcList, onNewForm, isSyncin
           reader.onerror = reject;
           reader.readAsDataURL(file);
         });
-        
-        if (type === 'acceptance') {
-          setWeeklyAcceptance(base64);
-          setIsProcessingImage(false);
-          return;
-        }
+        if (type === 'acceptance') { setWeeklyAcceptance(base64); setIsProcessingImage(false); return; }
         newMedia.push(base64);
       }
-
-      if (type === 'problems') {
-        setProblems(p => ({ ...p, media: [...p.media, ...newMedia] }));
-      }
-    } catch (e) {
-      alert("Erro ao ler imagem. Tente uma foto menor.");
-    } finally {
-      setIsProcessingImage(false);
-    }
+      if (type === 'problems') setProblems(p => ({ ...p, media: [...p.media, ...newMedia] }));
+    } catch (e) { alert("Erro ao ler imagem."); } finally { setIsProcessingImage(false); }
   };
 
   const handleSubmit = (e: React.MouseEvent) => {
     e.preventDefault();
     if (!svc) { alert("Selecione um SVC."); return; }
-    
     const finalData: FormData = {
       id: `REP-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`.toUpperCase(),
       timestamp: new Date().toISOString(),
       date, svc, spotOffers, fleetStatus, baseCapacity, problems, weeklyAcceptance,
       acceptances: []
     };
-
     onSave(finalData);
     setIsSubmitted(true);
   };
@@ -131,36 +109,27 @@ export const FormView: React.FC<Props> = ({ onSave, svcList, onNewForm, isSyncin
         <div className="w-20 h-20 bg-emerald-500 rounded-full flex items-center justify-center mb-6 shadow-xl">
           <CheckCircle2 className="w-10 h-10 text-white" />
         </div>
-        <h2 className="text-2xl font-black text-slate-800 mb-2 uppercase">Relatório Enviado</h2>
-        <p className="text-slate-500 font-bold mb-10 text-sm">Os dados do SVC {svc} foram salvos com sucesso.</p>
-        <button 
-          onClick={onNewForm}
-          className="w-full py-5 bg-indigo-600 text-white font-black rounded-3xl shadow-xl uppercase tracking-widest text-xs"
-        >
-          Novo Reporte
-        </button>
+        <h2 className="text-2xl font-black text-slate-800 mb-2 uppercase">Enviado com Sucesso</h2>
+        <p className="text-slate-500 font-bold mb-10 text-sm">Obrigado pelo seu reporte diário.</p>
+        <button onClick={onNewForm} className="w-full py-5 bg-indigo-600 text-white font-black rounded-3xl shadow-xl uppercase text-xs">Novo Reporte</button>
       </div>
     );
   }
 
   return (
     <div className="pb-10 pt-4">
-      {/* Indicador Global de Carregamento */}
-      {(isSyncing || isProcessingImage) && (
-        <div className="fixed inset-0 bg-indigo-900/80 backdrop-blur-md z-[300] flex flex-col items-center justify-center text-white p-10">
-          <RefreshCw className="w-12 h-12 animate-spin text-indigo-300 mb-4" />
-          <p className="text-xs font-black uppercase tracking-[0.3em]">
-            {isProcessingImage ? 'Processando Imagem...' : 'Sincronizando...'}
-          </p>
-        </div>
-      )}
-
-      {/* Título do Passo Atual */}
       <div className="mb-4 px-1 flex justify-between items-center">
-        <span className="text-[10px] font-black text-indigo-600 uppercase tracking-widest bg-indigo-50 px-3 py-1 rounded-full">
-          Passo {step} de 7
-        </span>
-        {step === 6 && <span className="text-[10px] font-black text-rose-500 uppercase animate-pulse">Obrigatório</span>}
+        <span className="text-[10px] font-black text-indigo-600 uppercase tracking-widest bg-indigo-50 px-3 py-1 rounded-full">Passo {step} de 7</span>
+        {step === 1 && (
+          <button 
+            onClick={onManualSync} 
+            disabled={isSyncing}
+            className={`flex items-center gap-1.5 text-[9px] font-black uppercase text-indigo-400 ${isSyncing ? 'opacity-50' : ''}`}
+          >
+            <RefreshCw className={`w-3 h-3 ${isSyncing ? 'animate-spin' : ''}`} />
+            {isSyncing ? 'Sincronizando...' : 'Atualizar Placas'}
+          </button>
+        )}
       </div>
 
       <div className="mb-8 flex items-center justify-between gap-1 px-1">
@@ -178,8 +147,11 @@ export const FormView: React.FC<Props> = ({ onSave, svcList, onNewForm, isSyncin
               <input type="date" value={date} onChange={e => setDate(e.target.value)} className="w-full p-4 bg-slate-50 rounded-2xl font-black text-lg outline-none" />
             </div>
             <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
-              <label className="text-[10px] font-black text-slate-400 uppercase block mb-4">Selecione o SVC</label>
-              <div className="grid grid-cols-2 gap-2 max-h-[250px] overflow-y-auto pr-2">
+              <div className="flex justify-between items-center mb-4">
+                <label className="text-[10px] font-black text-slate-400 uppercase block">Selecione seu SVC</label>
+                <span className="text-[9px] font-bold text-slate-300 uppercase">{svcList.length} SVCs disponíveis</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
                 {svcList.map(s => (
                   <button key={s.id} onClick={() => handleSvcChange(s.id)} className={`p-4 rounded-2xl font-black text-sm border-2 transition-all ${svc === s.id ? 'bg-indigo-600 border-indigo-600 text-white shadow-md' : 'bg-white border-slate-100 text-slate-500'}`}>
                     {s.name}
@@ -208,7 +180,7 @@ export const FormView: React.FC<Props> = ({ onSave, svcList, onNewForm, isSyncin
 
         {step === 3 && (
           <div className="space-y-4">
-            <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tight">Frota Parada</h2>
+            <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tight">Status da Frota</h2>
             <div className="space-y-3">
               {fleetStatus.map(v => (
                 <div key={v.plate} className={`p-5 rounded-3xl border-2 transition-all ${!v.running ? 'bg-rose-50 border-rose-500' : 'bg-white border-slate-50'}`}>
@@ -244,13 +216,7 @@ export const FormView: React.FC<Props> = ({ onSave, svcList, onNewForm, isSyncin
              {VEHICLE_CATEGORIES.map(cat => (
                <div key={cat} className="bg-white p-4 rounded-3xl flex justify-between items-center shadow-sm border border-slate-50">
                  <span className="text-[9px] font-black uppercase text-slate-500 flex-1 pr-4">{cat}</span>
-                 <input 
-                   type="number" 
-                   inputMode="numeric"
-                   value={baseCapacity[cat]} 
-                   onChange={e => setBaseCapacity(prev => ({...prev, [cat]: parseInt(e.target.value) || 0}))} 
-                   className="w-20 p-4 bg-slate-50 rounded-2xl text-center font-black outline-none border-2 border-transparent focus:border-indigo-500" 
-                 />
+                 <input type="number" inputMode="numeric" value={baseCapacity[cat]} onChange={e => setBaseCapacity(prev => ({...prev, [cat]: parseInt(e.target.value) || 0}))} className="w-20 p-4 bg-slate-50 rounded-2xl text-center font-black outline-none border-2 border-transparent focus:border-indigo-500" />
                </div>
              ))}
           </div>
@@ -258,75 +224,43 @@ export const FormView: React.FC<Props> = ({ onSave, svcList, onNewForm, isSyncin
 
         {step === 5 && (
           <div className="space-y-6">
-            <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tight">Problemas Operacionais</h2>
-            <textarea 
-              placeholder="Descreva problemas como quebras ou atrasos..." 
-              value={problems.description} 
-              onChange={e => setProblems(p => ({...p, description: e.target.value}))}
-              className="w-full p-6 bg-white border-2 border-slate-100 focus:border-indigo-500 rounded-[2rem] min-h-[120px] font-bold text-slate-700 outline-none" 
-            />
-            
-            <div className="space-y-4">
-              <label htmlFor="problems-upload" className="flex flex-col items-center justify-center p-8 bg-white border-2 border-dashed border-slate-200 rounded-[2.5rem] cursor-pointer active:bg-slate-100 transition-colors">
-                <Camera className="w-8 h-8 text-indigo-400 mb-2" />
-                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Anexar Fotos de Problemas</span>
-                <input id="problems-upload" type="file" accept="image/*" multiple className="hidden" onChange={e => handleFileSelection(e.target.files, 'problems')} />
-              </label>
-              
-              <div className="grid grid-cols-3 gap-3">
-                {problems.media.map((img, i) => (
-                  <div key={i} className="aspect-square rounded-2xl overflow-hidden relative border border-slate-100">
-                    <img src={img} className="w-full h-full object-cover" />
-                    <button type="button" onClick={() => setProblems(p => ({...p, media: p.media.filter((_, idx) => idx !== i)}))} className="absolute top-1 right-1 bg-rose-500 text-white p-1 rounded-lg shadow-lg">
-                      <Trash2 className="w-3 h-3" />
-                    </button>
-                  </div>
-                ))}
-              </div>
+            <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tight">Ocorrências</h2>
+            <textarea placeholder="Relate quebras, atrasos ou problemas..." value={problems.description} onChange={e => setProblems(p => ({...p, description: e.target.value}))} className="w-full p-6 bg-white border-2 border-slate-100 focus:border-indigo-500 rounded-[2rem] min-h-[120px] font-bold text-slate-700 outline-none" />
+            <label htmlFor="problems-upload" className="flex flex-col items-center justify-center p-8 bg-white border-2 border-dashed border-slate-200 rounded-[2.5rem] cursor-pointer active:bg-slate-100 transition-colors">
+              <Camera className="w-8 h-8 text-indigo-400 mb-2" />
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Fotos do Problema</span>
+              <input id="problems-upload" type="file" accept="image/*" multiple className="hidden" onChange={e => handleFileSelection(e.target.files, 'problems')} />
+            </label>
+            <div className="grid grid-cols-3 gap-3">
+              {problems.media.map((img, i) => (
+                <div key={i} className="aspect-square rounded-2xl overflow-hidden relative border border-slate-100">
+                  <img src={img} className="w-full h-full object-cover" />
+                  <button type="button" onClick={() => setProblems(p => ({...p, media: p.media.filter((_, idx) => idx !== i)}))} className="absolute top-1 right-1 bg-rose-500 text-white p-1 rounded-lg shadow-lg"><Trash2 className="w-3 h-3" /></button>
+                </div>
+              ))}
             </div>
           </div>
         )}
 
-        {/* PASSO 6 - ACEITE OPERACIONAL (REFORMULADO) */}
         {step === 6 && (
           <div className="space-y-6">
             <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tight">Aceite Semanal</h2>
-            
             <div className="bg-indigo-600 text-white p-5 rounded-[2rem] shadow-lg flex items-start gap-4">
               <Info className="w-6 h-6 shrink-0 mt-1 text-indigo-200" />
-              <p className="text-[11px] font-bold uppercase leading-relaxed">
-                Para finalizar, anexe o print ou foto do aceite operacional desta semana.
-              </p>
+              <p className="text-[11px] font-bold uppercase leading-relaxed">Anexe o print ou foto do aceite operacional desta semana.</p>
             </div>
-            
             {!weeklyAcceptance ? (
-              <label 
-                htmlFor="final-acceptance" 
-                className="flex flex-col items-center justify-center p-20 bg-white border-4 border-dashed border-slate-200 rounded-[3rem] cursor-pointer active:bg-indigo-50 transition-all text-center"
-              >
+              <label htmlFor="final-acceptance" className="flex flex-col items-center justify-center p-20 bg-white border-4 border-dashed border-slate-200 rounded-[3rem] cursor-pointer active:bg-indigo-50 transition-all text-center">
                 <Upload className="w-12 h-12 text-indigo-400 mb-4" />
-                <span className="text-[12px] font-black text-slate-500 uppercase tracking-widest">Tirar Foto ou Subir Print</span>
-                <input 
-                  id="final-acceptance" 
-                  type="file" 
-                  accept="image/*" 
-                  className="hidden" 
-                  onChange={e => handleFileSelection(e.target.files, 'acceptance')} 
-                />
+                <span className="text-[12px] font-black text-slate-500 uppercase tracking-widest">Subir Print/Foto</span>
+                <input id="final-acceptance" type="file" accept="image/*" className="hidden" onChange={e => handleFileSelection(e.target.files, 'acceptance')} />
               </label>
             ) : (
               <div className="space-y-4">
                 <div className="relative rounded-[2.5rem] overflow-hidden shadow-2xl border-4 border-white">
                   <img src={weeklyAcceptance} className="w-full max-h-[400px] object-contain bg-slate-100" />
                   <div className="absolute inset-x-0 bottom-0 p-4 bg-gradient-to-t from-black/80 to-transparent">
-                    <button 
-                      type="button"
-                      onClick={() => setWeeklyAcceptance(undefined)}
-                      className="w-full py-4 bg-rose-600 text-white rounded-2xl font-black uppercase text-[10px] flex items-center justify-center gap-3"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                      Remover e escolher outra
-                    </button>
+                    <button type="button" onClick={() => setWeeklyAcceptance(undefined)} className="w-full py-4 bg-rose-600 text-white rounded-2xl font-black uppercase text-[10px] flex items-center justify-center gap-3"><Trash2 className="w-4 h-4" /> Remover</button>
                   </div>
                 </div>
               </div>
@@ -336,7 +270,7 @@ export const FormView: React.FC<Props> = ({ onSave, svcList, onNewForm, isSyncin
 
         {step === 7 && (
           <div className="space-y-8">
-            <h2 className="text-2xl font-black text-slate-800 text-center uppercase tracking-tight">Revisão Final</h2>
+            <h2 className="text-2xl font-black text-slate-800 text-center uppercase tracking-tight">Revisão</h2>
             <div className="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm space-y-4">
                <div className="flex justify-between items-center border-b border-slate-50 pb-4">
                  <span className="text-[10px] font-black text-slate-400 uppercase">SVC</span>
@@ -347,31 +281,18 @@ export const FormView: React.FC<Props> = ({ onSave, svcList, onNewForm, isSyncin
                  <span className="font-black text-slate-800">{date.split('-').reverse().join('/')}</span>
                </div>
                <div className="flex justify-between items-center">
-                 <span className="text-[10px] font-black text-slate-400 uppercase">Frota Ativa</span>
-                 <span className="font-black text-emerald-500">
-                   {fleetStatus.filter(f => f.running).length} veículos
-                 </span>
+                 <span className="text-[10px] font-black text-slate-400 uppercase">Frota</span>
+                 <span className="font-black text-emerald-500">{fleetStatus.filter(f => f.running).length} Rodando</span>
                </div>
             </div>
-            
-            <button 
-              onClick={handleSubmit} 
-              className="w-full py-8 bg-indigo-600 text-white font-black text-xl rounded-[3rem] shadow-2xl uppercase tracking-widest active:scale-95 transition-all"
-            >
-              Confirmar e Enviar
-            </button>
+            <button onClick={handleSubmit} className="w-full py-8 bg-indigo-600 text-white font-black text-xl rounded-[3rem] shadow-2xl uppercase tracking-widest active:scale-95 transition-all">Enviar Relatório</button>
           </div>
         )}
       </div>
 
       <div className="mt-12 flex justify-between gap-3">
         {step > 1 && (
-          <button 
-            onClick={() => setStep(s => s - 1)} 
-            className="flex-1 py-5 bg-white text-slate-400 font-black rounded-[2rem] border border-slate-100 flex items-center justify-center gap-2 uppercase text-[10px]"
-          >
-            <ChevronLeft className="w-4 h-4" /> Anterior
-          </button>
+          <button onClick={() => setStep(s => s - 1)} className="flex-1 py-5 bg-white text-slate-400 font-black rounded-[2rem] border border-slate-100 flex items-center justify-center gap-2 uppercase text-[10px]"><ChevronLeft className="w-4 h-4" /> Anterior</button>
         )}
         {step < 7 && (
           <button 
@@ -386,7 +307,3 @@ export const FormView: React.FC<Props> = ({ onSave, svcList, onNewForm, isSyncin
     </div>
   );
 };
-
-const Info = (props: any) => (
-  <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
-);
