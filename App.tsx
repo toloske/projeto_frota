@@ -25,6 +25,7 @@ const App: React.FC = () => {
   const [svcList, setSvcList] = useState<SVCConfig[]>([]);
   const [formKey, setFormKey] = useState(0);
   
+  // A URL agora vem prioritariamente de constants.ts ou do que foi salvo no localStorage
   const [syncUrl, setSyncUrl] = useState<string>(() => {
     const saved = localStorage.getItem('fleet_sync_url');
     if (saved && saved.trim().startsWith('http')) return saved.trim();
@@ -47,7 +48,6 @@ const App: React.FC = () => {
     if (!silent) setIsSyncing(true);
     
     try {
-      // Busca relatórios E configuração
       const response = await fetch(`${currentUrl}?action=get_all`, { 
         method: 'GET',
         redirect: 'follow',
@@ -83,27 +83,29 @@ const App: React.FC = () => {
       setSyncError(false);
     } catch (e) {
       if (!silent) setSyncError(true);
+      console.error("Erro na sincronização:", e);
     } finally {
       if (!silent) setIsSyncing(false);
     }
   }, [syncUrl]);
 
   useEffect(() => {
-    const handleFocus = () => fetchCloudData(true);
-    window.addEventListener('focus', handleFocus);
-    window.addEventListener('online', handleFocus);
-    
-    // Carrega do cache local primeiro
-    const saved = localStorage.getItem('fleet_submissions');
-    if (saved) setSubmissions(JSON.parse(saved));
+    // 1. Carrega do cache local primeiro para ser instantâneo
+    const savedSubmissions = localStorage.getItem('fleet_submissions');
+    if (savedSubmissions) setSubmissions(JSON.parse(savedSubmissions));
 
     const savedSvc = localStorage.getItem('fleet_svc_config');
     setSvcList(savedSvc ? JSON.parse(savedSvc) : DEFAULT_SVC_LIST);
 
+    // 2. Tenta sincronizar com a nuvem imediatamente se houver URL
     if (syncUrl) {
       fetchCloudData();
       pollingRef.current = window.setInterval(() => fetchCloudData(true), 60000);
     }
+
+    const handleFocus = () => fetchCloudData(true);
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener('online', handleFocus);
 
     return () => {
       window.removeEventListener('focus', handleFocus);
@@ -125,7 +127,7 @@ const App: React.FC = () => {
         await fetch(syncUrl, {
           method: 'POST',
           mode: 'no-cors',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'text/plain' },
           body: JSON.stringify({ type: 'report', data })
         });
         setTimeout(() => fetchCloudData(true), 2000);
@@ -138,7 +140,6 @@ const App: React.FC = () => {
     return true;
   };
 
-  // Fixed error: Added missing handleAdminAuth function to handle the administrator login form submission
   const handleAdminAuth = (e: React.FormEvent) => {
     e.preventDefault();
     if (passwordInput === '1234') {
