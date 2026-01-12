@@ -25,12 +25,7 @@ const App: React.FC = () => {
   const [svcList, setSvcList] = useState<SVCConfig[]>([]);
   const [formKey, setFormKey] = useState(0);
   
-  // A URL agora vem prioritariamente de constants.ts ou do que foi salvo no localStorage
-  const [syncUrl, setSyncUrl] = useState<string>(() => {
-    const saved = localStorage.getItem('fleet_sync_url');
-    if (saved && saved.trim().startsWith('http')) return saved.trim();
-    return GLOBAL_SYNC_URL.trim();
-  });
+  const [syncUrl] = useState<string>(GLOBAL_SYNC_URL.trim());
 
   const [isSyncing, setIsSyncing] = useState(false);
   const [lastSync, setLastSync] = useState<Date | null>(null);
@@ -40,15 +35,13 @@ const App: React.FC = () => {
   
   const pollingRef = useRef<number | null>(null);
 
-  // Função para carregar TUDO da nuvem (Relatórios + Configuração de Placas)
   const fetchCloudData = useCallback(async (silent = false) => {
-    const currentUrl = syncUrl.trim();
-    if (!currentUrl || !currentUrl.startsWith('http')) return;
+    if (!syncUrl || !syncUrl.startsWith('http')) return;
 
     if (!silent) setIsSyncing(true);
     
     try {
-      const response = await fetch(`${currentUrl}?action=get_all`, { 
+      const response = await fetch(`${syncUrl}?action=get_all`, { 
         method: 'GET',
         redirect: 'follow',
         cache: 'no-store'
@@ -58,7 +51,7 @@ const App: React.FC = () => {
       
       const data = await response.json();
       
-      // 1. Processa Relatórios
+      // 1. Relatórios
       if (data.submissions && Array.isArray(data.submissions)) {
         setSubmissions(currentLocal => {
           const map = new Map<string, FormData>();
@@ -73,7 +66,7 @@ const App: React.FC = () => {
         });
       }
 
-      // 2. Processa Configuração de SVCs/Placas (Sincronia PC -> Celular)
+      // 2. Configuração de SVCs (CRÍTICO para o celular)
       if (data.config && Array.isArray(data.config) && data.config.length > 0) {
         setSvcList(data.config);
         localStorage.setItem('fleet_svc_config', JSON.stringify(data.config));
@@ -83,21 +76,21 @@ const App: React.FC = () => {
       setSyncError(false);
     } catch (e) {
       if (!silent) setSyncError(true);
-      console.error("Erro na sincronização:", e);
+      console.error("Sync Error:", e);
     } finally {
       if (!silent) setIsSyncing(false);
     }
   }, [syncUrl]);
 
   useEffect(() => {
-    // 1. Carrega do cache local primeiro para ser instantâneo
+    // Inicialização do estado
     const savedSubmissions = localStorage.getItem('fleet_submissions');
     if (savedSubmissions) setSubmissions(JSON.parse(savedSubmissions));
 
     const savedSvc = localStorage.getItem('fleet_svc_config');
     setSvcList(savedSvc ? JSON.parse(savedSvc) : DEFAULT_SVC_LIST);
 
-    // 2. Tenta sincronizar com a nuvem imediatamente se houver URL
+    // Força sincronia imediata se houver URL
     if (syncUrl) {
       fetchCloudData();
       pollingRef.current = window.setInterval(() => fetchCloudData(true), 60000);
@@ -151,6 +144,11 @@ const App: React.FC = () => {
     }
   };
 
+  const handleUpdateSvcList = (newList: SVCConfig[]) => {
+    setSvcList(newList);
+    localStorage.setItem('fleet_svc_config', JSON.stringify(newList));
+  };
+
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900 font-inter">
       <header className="bg-white border-b border-slate-200 p-4 sticky top-0 z-50">
@@ -167,7 +165,7 @@ const App: React.FC = () => {
               <div className="flex items-center gap-1.5 mt-1">
                 <div className={`w-1.5 h-1.5 rounded-full ${syncError ? 'bg-rose-500' : 'bg-emerald-500 animate-pulse'}`} />
                 <span className={`text-[8px] font-bold uppercase ${syncError ? 'text-rose-500' : 'text-emerald-500'}`}>
-                  {syncError ? 'Erro Sinc' : 'Conectado'}
+                  {syncError ? 'Offline' : 'Online'}
                 </span>
               </div>
             </div>
@@ -209,10 +207,10 @@ const App: React.FC = () => {
             {activeTab === 'settings' && (
               <SettingsView 
                 svcList={svcList} 
-                onUpdate={(l) => { setSvcList(l); localStorage.setItem('fleet_svc_config', JSON.stringify(l)); }} 
-                onClearData={() => { if(confirm('Resetar?')) { localStorage.clear(); window.location.reload(); }}}
+                onUpdate={handleUpdateSvcList} 
+                onClearData={() => { if(confirm('Resetar Tudo?')) { localStorage.clear(); window.location.reload(); }}}
                 syncUrl={syncUrl}
-                onUpdateSyncUrl={(url) => { setSyncUrl(url); localStorage.setItem('fleet_sync_url', url); fetchCloudData(); }}
+                onUpdateSyncUrl={() => {}} // Bloqueado, usa o constants.ts
                 submissions={submissions}
                 onImportData={(data) => { setSubmissions(data); localStorage.setItem('fleet_submissions', JSON.stringify(data)); }}
               />
@@ -238,10 +236,11 @@ const App: React.FC = () => {
       {showLoginModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-slate-900/60 backdrop-blur-sm">
           <div className="bg-white w-full max-w-sm rounded-[2rem] shadow-2xl p-8">
-            <h2 className="text-xl font-black text-slate-800 mb-6 flex items-center gap-2 uppercase">Acesso Restrito</h2>
+            <h2 className="text-xl font-black text-slate-800 mb-6 flex items-center gap-2 uppercase text-center">Gestor Frota</h2>
             <form onSubmit={handleAdminAuth} className="space-y-4">
               <input type="password" placeholder="Senha" autoFocus value={passwordInput} onChange={(e) => setPasswordInput(e.target.value)} className="w-full p-4 bg-slate-50 border-2 border-transparent focus:border-indigo-500 rounded-2xl outline-none font-bold text-center" />
-              <button type="submit" className="w-full py-4 bg-indigo-600 text-white font-black rounded-2xl uppercase text-[10px]">Entrar</button>
+              <button type="submit" className="w-full py-4 bg-indigo-600 text-white font-black rounded-2xl uppercase text-[10px]">Entrar no Painel</button>
+              <button type="button" onClick={() => setShowLoginModal(false)} className="w-full text-[9px] font-black text-slate-300 uppercase">Voltar ao Formulário</button>
             </form>
           </div>
         </div>
