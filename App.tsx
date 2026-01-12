@@ -21,6 +21,7 @@ const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'form' | 'admin' | 'settings'>('form');
   const [submissions, setSubmissions] = useState<FormData[]>([]);
   const [svcList, setSvcList] = useState<SVCConfig[]>([]);
+  const [configSource, setConfigSource] = useState<'default' | 'cloud'>('default');
   const [formKey, setFormKey] = useState(0);
   
   const syncUrl = GLOBAL_SYNC_URL.trim();
@@ -34,9 +35,7 @@ const App: React.FC = () => {
   const pollingRef = useRef<number | null>(null);
 
   const fetchCloudData = useCallback(async (silent = false) => {
-    if (!syncUrl || !syncUrl.startsWith('http')) {
-      return;
-    }
+    if (!syncUrl || !syncUrl.startsWith('http')) return;
 
     if (!silent) setIsSyncing(true);
     
@@ -50,6 +49,7 @@ const App: React.FC = () => {
       if (!response.ok) throw new Error("Erro na rede");
       
       const data = await response.json();
+      console.log("DADOS RECEBIDOS DA PLANILHA:", data);
       
       // 1. Relatórios
       if (data.submissions && Array.isArray(data.submissions)) {
@@ -68,28 +68,42 @@ const App: React.FC = () => {
         });
       }
 
-      // 2. Configuração de Placas (O que o celular precisa)
+      // 2. Configuração de Placas (Sincronia do Computador para o Celular)
       if (data.config && Array.isArray(data.config) && data.config.length > 0) {
+        console.log("NOVAS PLACAS DETECTADAS NA NUVEM!");
         setSvcList(data.config);
+        setConfigSource('cloud');
         localStorage.setItem('fleet_svc_config', JSON.stringify(data.config));
+        localStorage.setItem('fleet_config_source', 'cloud');
+      } else {
+        console.warn("Nenhuma configuração de placas encontrada na resposta do servidor.");
       }
       
       setLastSync(new Date());
       setSyncError(false);
     } catch (e) {
       if (!silent) setSyncError(true);
-      console.error("Sync Failure:", e);
+      console.error("Falha ao buscar dados da nuvem:", e);
     } finally {
       if (!silent) setIsSyncing(false);
     }
   }, [syncUrl]);
 
   useEffect(() => {
+    // Carregamento inicial do cache local
     const savedSubmissions = localStorage.getItem('fleet_submissions');
     if (savedSubmissions) setSubmissions(JSON.parse(savedSubmissions));
 
     const savedSvc = localStorage.getItem('fleet_svc_config');
-    setSvcList(savedSvc ? JSON.parse(savedSvc) : DEFAULT_SVC_LIST);
+    const savedSource = localStorage.getItem('fleet_config_source') as 'cloud' | 'default';
+    
+    if (savedSvc) {
+      setSvcList(JSON.parse(savedSvc));
+      setConfigSource(savedSource || 'cloud');
+    } else {
+      setSvcList(DEFAULT_SVC_LIST);
+      setConfigSource('default');
+    }
 
     if (syncUrl) {
       fetchCloudData();
@@ -178,6 +192,7 @@ const App: React.FC = () => {
             key={formKey} 
             onSave={handleSaveSubmission} 
             svcList={svcList} 
+            configSource={configSource}
             onNewForm={() => setFormKey(k => k + 1)}
             isSyncing={isSyncing}
             onManualSync={() => fetchCloudData()}

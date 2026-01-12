@@ -12,7 +12,9 @@ import {
   Trash2,
   RefreshCw,
   Upload,
-  Info
+  Info,
+  Database,
+  Cloud
 } from 'lucide-react';
 
 const getLocalDate = () => {
@@ -23,12 +25,13 @@ const getLocalDate = () => {
 interface Props {
   onSave: (data: FormData) => void;
   svcList: SVCConfig[];
+  configSource: 'default' | 'cloud';
   onNewForm: () => void;
   isSyncing?: boolean;
   onManualSync?: () => void;
 }
 
-export const FormView: React.FC<Props> = ({ onSave, svcList, onNewForm, isSyncing, onManualSync }) => {
+export const FormView: React.FC<Props> = ({ onSave, svcList, configSource, onNewForm, isSyncing, onManualSync }) => {
   const [step, setStep] = useState(1);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [isProcessingImage, setIsProcessingImage] = useState(false);
@@ -148,8 +151,14 @@ export const FormView: React.FC<Props> = ({ onSave, svcList, onNewForm, isSyncin
             </div>
             <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
               <div className="flex justify-between items-center mb-4">
-                <label className="text-[10px] font-black text-slate-400 uppercase block">Selecione seu SVC</label>
-                <span className="text-[9px] font-bold text-slate-300 uppercase">{svcList.length} SVCs disponíveis</span>
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-black text-slate-400 uppercase block">Selecione seu SVC</label>
+                  <div className={`flex items-center gap-1 text-[8px] font-black uppercase ${configSource === 'cloud' ? 'text-emerald-500' : 'text-slate-300'}`}>
+                    {configSource === 'cloud' ? <Cloud className="w-3 h-3" /> : <Database className="w-3 h-3" />}
+                    {configSource === 'cloud' ? 'Sincronizado via Nuvem' : 'Usando Lista Padrão'}
+                  </div>
+                </div>
+                <span className="text-[9px] font-bold text-slate-300 uppercase">{svcList.length} SVCs</span>
               </div>
               <div className="grid grid-cols-2 gap-2 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
                 {svcList.map(s => (

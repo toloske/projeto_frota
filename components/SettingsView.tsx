@@ -10,7 +10,8 @@ import {
   X, 
   CloudUpload, 
   RefreshCw, 
-  Globe
+  Globe,
+  DatabaseZap
 } from 'lucide-react';
 
 interface Props {
@@ -42,7 +43,7 @@ export const SettingsView: React.FC<Props> = ({
     setPublishStatus('idle');
 
     try {
-      // Importante: Usar no-cors e text/plain para evitar bloqueios de segurança do Google
+      // Envia os dados atuais para o servidor salvar na aba "Configuracao"
       await fetch(syncUrl, {
         method: 'POST',
         mode: 'no-cors',
@@ -60,6 +61,14 @@ export const SettingsView: React.FC<Props> = ({
       setPublishStatus('error');
     } finally {
       setIsPublishing(false);
+    }
+  };
+
+  const clearConfigCache = () => {
+    if (confirm('Isso removerá as placas customizadas deste dispositivo e tentará baixar as da nuvem novamente. Continuar?')) {
+      localStorage.removeItem('fleet_svc_config');
+      localStorage.removeItem('fleet_config_source');
+      window.location.reload();
     }
   };
 
@@ -93,19 +102,21 @@ export const SettingsView: React.FC<Props> = ({
           <h2 className="text-xl font-black uppercase tracking-tight">Gestão Global</h2>
         </div>
         <p className="text-[10px] font-bold text-indigo-100 uppercase leading-relaxed">
-          Após alterar placas no computador, clique abaixo. Todos os celulares da equipe baixarão as novas placas automaticamente ao abrir o app.
+          1. Altere ou adicione SVCs abaixo.<br/>
+          2. Clique em publicar.<br/>
+          3. Todos os celulares receberão as placas novas.
         </p>
         <button 
           onClick={publishConfigToCloud}
           disabled={isPublishing}
-          className={`w-full py-5 rounded-2xl font-black uppercase text-[10px] tracking-widest flex items-center justify-center gap-3 transition-all ${publishStatus === 'success' ? 'bg-emerald-500' : (publishStatus === 'error' ? 'bg-rose-500' : 'bg-white text-indigo-600 shadow-lg active:scale-95')}`}
+          className={`w-full py-5 rounded-2xl font-black uppercase text-[10px] tracking-widest flex items-center justify-center gap-3 transition-all ${publishStatus === 'success' ? 'bg-emerald-500 text-white' : (publishStatus === 'error' ? 'bg-rose-500 text-white' : 'bg-white text-indigo-600 shadow-lg active:scale-95')}`}
         >
           {isPublishing ? (
             <RefreshCw className="w-5 h-5 animate-spin" />
           ) : publishStatus === 'success' ? (
             <><CheckCircle className="w-5 h-5" /> Placas Enviadas!</>
           ) : (
-            <><CloudUpload className="w-5 h-5" /> 1. Publicar para Celulares</>
+            <><CloudUpload className="w-5 h-5" /> Publicar para Celulares</>
           )}
         </button>
       </div>
@@ -131,6 +142,13 @@ export const SettingsView: React.FC<Props> = ({
           ))}
         </div>
       </div>
+
+      <button 
+        onClick={clearConfigCache}
+        className="w-full py-4 bg-slate-200 text-slate-500 rounded-2xl font-black uppercase text-[9px] flex items-center justify-center gap-2"
+      >
+        <DatabaseZap className="w-4 h-4" /> Resetar Placas Locais
+      </button>
 
       <div className="p-4 bg-slate-100 rounded-2xl">
         <p className="text-[8px] font-black text-slate-400 uppercase text-center mb-2">Conexão Atual</p>
