@@ -22,6 +22,7 @@ const App: React.FC = () => {
   const [submissions, setSubmissions] = useState<FormData[]>([]);
   const [svcList, setSvcList] = useState<SVCConfig[]>([]);
   const [configSource, setConfigSource] = useState<'default' | 'cloud'>('default');
+  const [lastRawResponse, setLastRawResponse] = useState<string>('');
   const [formKey, setFormKey] = useState(0);
   
   const syncUrl = GLOBAL_SYNC_URL.trim();
@@ -46,10 +47,11 @@ const App: React.FC = () => {
         cache: 'no-store'
       });
       
-      if (!response.ok) throw new Error("Erro na rede");
+      if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
       
-      const data = await response.json();
-      console.log("DADOS RECEBIDOS DA PLANILHA:", data);
+      const jsonText = await response.text();
+      setLastRawResponse(jsonText);
+      const data = JSON.parse(jsonText);
       
       // 1. Relatórios
       if (data.submissions && Array.isArray(data.submissions)) {
@@ -68,29 +70,33 @@ const App: React.FC = () => {
         });
       }
 
-      // 2. Configuração de Placas (Sincronia do Computador para o Celular)
+      // 2. Configuração de Placas
       if (data.config && Array.isArray(data.config) && data.config.length > 0) {
-        console.log("NOVAS PLACAS DETECTADAS NA NUVEM!");
         setSvcList(data.config);
         setConfigSource('cloud');
         localStorage.setItem('fleet_svc_config', JSON.stringify(data.config));
         localStorage.setItem('fleet_config_source', 'cloud');
       } else {
-        console.warn("Nenhuma configuração de placas encontrada na resposta do servidor.");
+        // Se o servidor respondeu mas não enviou config, mantemos o que já temos no localStorage
+        // para não "resetar" o usuário para a lista padrão acidentalmente.
+        const cached = localStorage.getItem('fleet_svc_config');
+        if (cached) {
+          setSvcList(JSON.parse(cached));
+          setConfigSource('cloud');
+        }
       }
       
       setLastSync(new Date());
       setSyncError(false);
     } catch (e) {
       if (!silent) setSyncError(true);
-      console.error("Falha ao buscar dados da nuvem:", e);
+      console.error("Sync Error:", e);
     } finally {
       if (!silent) setIsSyncing(false);
     }
   }, [syncUrl]);
 
   useEffect(() => {
-    // Carregamento inicial do cache local
     const savedSubmissions = localStorage.getItem('fleet_submissions');
     if (savedSubmissions) setSubmissions(JSON.parse(savedSubmissions));
 
@@ -112,11 +118,8 @@ const App: React.FC = () => {
 
     const handleFocus = () => fetchCloudData(true);
     window.addEventListener('focus', handleFocus);
-    window.addEventListener('online', handleFocus);
-
     return () => {
       window.removeEventListener('focus', handleFocus);
-      window.removeEventListener('online', handleFocus);
       if (pollingRef.current) clearInterval(pollingRef.current);
     };
   }, [syncUrl, fetchCloudData]);
@@ -219,6 +222,7 @@ const App: React.FC = () => {
                 onUpdateSyncUrl={() => {}} 
                 submissions={submissions}
                 onImportData={(data) => { setSubmissions(data); localStorage.setItem('fleet_submissions', JSON.stringify(data)); }}
+                lastRawResponse={lastRawResponse}
               />
             )}
           </div>
