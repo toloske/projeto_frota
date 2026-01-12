@@ -6,7 +6,7 @@ import { SVCConfig } from './types';
  * Isso fará com que todos os celulares fiquem online automaticamente
  * sem precisar digitar nada neles.
  */
-export const GLOBAL_SYNC_URL = ""; 
+export const GLOBAL_SYNC_URL = "https://script.google.com/macros/s/AKfycbw93Ar7SLf9NdbWqofjtWJrDL1tOQalV6u-G0EgEZvZhjU2P2TipLwHYKRg-NTupQpi_A/exec"; 
 
 export const VEHICLE_CATEGORIES = [
   'BULK - VAN EQUIPE ÚNICA POOL',
