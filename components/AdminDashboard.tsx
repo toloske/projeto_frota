@@ -12,7 +12,8 @@ import {
   Truck,
   Package,
   AlertTriangle,
-  X
+  X,
+  FileSpreadsheet
 } from 'lucide-react';
 
 const normalizeDate = (dateStr: string) => {
@@ -72,15 +73,45 @@ export const AdminDashboard: React.FC<Props> = ({ submissions, onRefresh, isSync
   );
 
   const handleExportFullCSV = () => {
-    const dayReports = submissions.filter(s => normalizeDate(s.date) === filterDate);
-    if (dayReports.length === 0) { alert("Sem dados nesta data."); return; }
-    const headers = ["ID Registro", "Horario Envio", "Data Operacao", "SVC", "SPOT Bulk Van", "SPOT Bulk Vuc", "SPOT Utilitarios", "SPOT Van", "SPOT Passeio", "SPOT Vuc", "Frota Rodando", "Frota Parada", "Problemas"].join(";");
-    const rows = dayReports.map(s => [s.id, new Date(s.timestamp).toLocaleTimeString(), formatDisplayDate(s.date), s.svc, s.spotOffers.bulkVan, s.spotOffers.bulkVuc, s.spotOffers.utilitarios, s.spotOffers.van, s.spotOffers.veiculoPasseio, s.spotOffers.vuc, s.fleetStatus.filter(v => v.running).length, s.fleetStatus.filter(v => !v.running).length, `"${s.problems.description.replace(/"/g, '""')}"`].join(";"));
+    if (submissions.length === 0) { alert("Sem dados para exportar."); return; }
+    
+    // Cabeçalhos expandidos
+    const headers = [
+      "ID Registro", "Data/Hora Envio", "Data Operacao", "SVC", 
+      "SPOT Bulk Van", "SPOT Bulk Vuc", "SPOT Utilitarios", "SPOT Van", "SPOT Passeio", "SPOT Vuc", 
+      "Total Frota Fixa", "Frota Rodando", "Frota Parada", 
+      "Ocorrencia Descricao", "Status Sincronizacao"
+    ].join(";");
+
+    const rows = submissions.map(s => {
+      const runningCount = s.fleetStatus.filter(v => v.running).length;
+      const stoppedCount = s.fleetStatus.filter(v => !v.running).length;
+      const sync = (s as any).syncStatus || 'local';
+      
+      return [
+        s.id, 
+        new Date(s.timestamp).toLocaleString(), 
+        formatDisplayDate(s.date), 
+        s.svc, 
+        s.spotOffers.bulkVan, 
+        s.spotOffers.bulkVuc, 
+        s.spotOffers.utilitarios, 
+        s.spotOffers.van, 
+        s.spotOffers.veiculoPasseio, 
+        s.spotOffers.vuc, 
+        s.fleetStatus.length,
+        runningCount, 
+        stoppedCount, 
+        `"${s.problems.description.replace(/"/g, '""')}"`,
+        sync
+      ].join(";");
+    });
+
     const csvContent = "\ufeff" + headers + "\n" + rows.join("\n");
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement("a");
     link.setAttribute("href", URL.createObjectURL(blob));
-    link.setAttribute("download", `Frota_${filterDate}.csv`);
+    link.setAttribute("download", `Relatorio_Geral_Frota_${new Date().toISOString().split('T')[0]}.csv`);
     link.click();
   };
 
@@ -92,10 +123,14 @@ export const AdminDashboard: React.FC<Props> = ({ submissions, onRefresh, isSync
             <h2 className="text-xl font-black text-slate-800 uppercase tracking-tight">Painel Gestor</h2>
             <div className="flex items-center gap-2 mt-1 text-[9px] font-bold text-slate-400 uppercase">
               <Clock className="w-3 h-3" />
-              {lastSync ? `Atualizado: ${lastSync.toLocaleTimeString()}` : 'Sem conexão'}
+              Base de Dados Local Ativa
             </div>
           </div>
           <div className="flex gap-2">
+            <button onClick={handleExportFullCSV} className="p-4 bg-emerald-50 text-emerald-600 rounded-2xl active:scale-95 transition-all flex items-center gap-2">
+              <FileSpreadsheet className="w-5 h-5" />
+              <span className="text-[10px] font-black uppercase hidden sm:block">Exportar Tudo</span>
+            </button>
             <button onClick={onRefresh} className={`p-4 bg-indigo-50 text-indigo-600 rounded-2xl active:scale-90 transition-all ${isSyncing ? 'animate-spin' : ''}`} disabled={isSyncing}>
               <RefreshCw className="w-5 h-5" />
             </button>
@@ -106,7 +141,6 @@ export const AdminDashboard: React.FC<Props> = ({ submissions, onRefresh, isSync
             <CalendarDays className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-indigo-500" />
             <input type="date" value={filterDate} onChange={(e) => setFilterDate(e.target.value)} className="w-full pl-11 pr-4 py-4 bg-slate-50 border-2 border-transparent focus:border-indigo-200 rounded-2xl font-black text-sm outline-none" />
           </div>
-          <button onClick={handleExportFullCSV} className="p-4 bg-slate-900 text-white rounded-2xl shadow-lg active:scale-95 transition-all"><Download className="w-6 h-6" /></button>
         </div>
       </div>
 
@@ -128,9 +162,7 @@ export const AdminDashboard: React.FC<Props> = ({ submissions, onRefresh, isSync
       </div>
 
       <div className="space-y-4">
-        <div className="flex items-center justify-between px-2">
-           <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Lista de Envios</h3>
-        </div>
+        <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest px-2">Registros de {formatDisplayDate(filterDate)}</h3>
         <div className="grid gap-3">
           {filteredSubmissions.length === 0 ? (
             <div className="bg-white/50 p-10 rounded-[2.5rem] border-2 border-dashed border-slate-200 text-center">
@@ -147,7 +179,7 @@ export const AdminDashboard: React.FC<Props> = ({ submissions, onRefresh, isSync
 
       <div className="space-y-4 pt-4">
         <h3 className="text-xs font-black text-indigo-400 uppercase tracking-widest flex items-center gap-2 px-2">
-          <History className="w-4 h-4" /> Recentes (Últimos Geral)
+          <History className="w-4 h-4" /> Histórico Geral
         </h3>
         <div className="grid gap-3 opacity-90">
           {submissions.slice(0, 15).map(s => (
@@ -163,12 +195,13 @@ export const AdminDashboard: React.FC<Props> = ({ submissions, onRefresh, isSync
   );
 };
 
-const ReportListItem: React.FC<{ report: FormData; isHistory?: boolean; onClick: () => void }> = ({ report, isHistory, onClick }) => {
-  const running = report.fleetStatus.filter(v => v.running).length;
-  const total = report.fleetStatus.length;
-  const hasProblems = report.problems.description.length > 0 || report.fleetStatus.some(v => !v.running);
+const ReportListItem: React.FC<{ report: any; isHistory?: boolean; onClick: () => void }> = ({ report, isHistory, onClick }) => {
+  const hasProblems = report.problems.description.length > 0 || report.fleetStatus.some((v:any) => !v.running);
+  const syncStatus = report.syncStatus;
+  
   return (
-    <button onClick={onClick} className="w-full text-left bg-white p-5 rounded-[2.2rem] border border-slate-100 shadow-sm flex items-center justify-between active:scale-[0.98] transition-all">
+    <button onClick={onClick} className="w-full text-left bg-white p-5 rounded-[2.2rem] border border-slate-100 shadow-sm flex items-center justify-between active:scale-[0.98] transition-all relative overflow-hidden">
+      {syncStatus === 'pending' && <div className="absolute top-0 left-0 w-1 h-full bg-amber-400"></div>}
       <div className="flex items-center gap-4">
         <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black uppercase text-xs ${isHistory ? 'bg-slate-100 text-slate-400' : 'bg-indigo-50 text-indigo-600'}`}>{report.svc.slice(0, 3)}</div>
         <div>
@@ -178,7 +211,10 @@ const ReportListItem: React.FC<{ report: FormData; isHistory?: boolean; onClick:
           </div>
         </div>
       </div>
-      {hasProblems && <div className="w-8 h-8 bg-rose-50 text-rose-500 rounded-xl flex items-center justify-center"><AlertCircle className="w-4 h-4" /></div>}
+      <div className="flex items-center gap-2">
+        {syncStatus === 'pending' && <Clock className="w-3 h-3 text-amber-500" />}
+        {hasProblems && <div className="w-8 h-8 bg-rose-50 text-rose-500 rounded-xl flex items-center justify-center"><AlertCircle className="w-4 h-4" /></div>}
+      </div>
     </button>
   );
 };
