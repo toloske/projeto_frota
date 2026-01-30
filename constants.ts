@@ -1,7 +1,13 @@
 
 import { SVCConfig } from './types';
 
-export const GLOBAL_SYNC_URL = (import.meta as any).env?.VITE_GLOBAL_SYNC_URL || ""; 
+/** 
+ * CONFIGURAÇÃO NATIVA: 
+ * Cole aqui a URL do seu Google Apps Script (terminada em /exec)
+ */
+export const NATIVE_SHEET_URL = "SUA_URL_DO_GOOGLE_SCRIPT_AQUI";
+
+export const GLOBAL_SYNC_URL = NATIVE_SHEET_URL; 
 
 export const VEHICLE_CATEGORIES = [
   'VUC DEDICADO COM AJUDANTE',

@@ -4,7 +4,7 @@ import { FormView } from './components/FormView';
 import { AdminDashboard } from './components/AdminDashboard';
 import { SettingsView } from './components/SettingsView';
 import { FormData, SVCConfig } from './types';
-import { DEFAULT_SVC_LIST, GLOBAL_SYNC_URL } from './constants';
+import { DEFAULT_SVC_LIST, NATIVE_SHEET_URL } from './constants';
 import * as db from './db';
 import { 
   ClipboardList, 
@@ -16,7 +16,8 @@ import {
   Wifi,
   WifiOff,
   CloudDownload,
-  AlertCircle
+  AlertCircle,
+  CheckCircle2
 } from 'lucide-react';
 
 const App: React.FC = () => {
@@ -25,7 +26,14 @@ const App: React.FC = () => {
   const [submissions, setSubmissions] = useState<any[]>([]);
   const [svcList, setSvcList] = useState<SVCConfig[]>([]);
   const [formKey, setFormKey] = useState(0);
-  const [syncUrl, setSyncUrl] = useState<string>(() => localStorage.getItem('fleet_sync_url') || GLOBAL_SYNC_URL || "");
+  
+  // A URL agora é fixa vinda das constantes, mas permitimos override se for um link válido
+  const [syncUrl, setSyncUrl] = useState<string>(() => {
+    const saved = localStorage.getItem('fleet_sync_url');
+    // Se a URL nativa no código for válida, ela manda. Caso contrário, busca do localStorage.
+    return (NATIVE_SHEET_URL && NATIVE_SHEET_URL.length > 20) ? NATIVE_SHEET_URL : (saved || "");
+  });
+
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncError, setSyncError] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
@@ -47,7 +55,7 @@ const App: React.FC = () => {
 
   // Sincronização de saída (Push)
   const syncQueue = useCallback(async () => {
-    if (!syncUrl || isSyncing) return;
+    if (!syncUrl || syncUrl.length < 20 || isSyncing) return;
     
     const pending = await db.getPendingSubmissions();
     if (pending.length === 0) {
@@ -61,21 +69,26 @@ const App: React.FC = () => {
 
     for (const item of pending) {
       try {
-        // Para Google Sheets, usamos text/plain para evitar o preflight de CORS
-        // E usamos o método POST enviando o JSON como string
-        const response = await fetch(syncUrl, {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 20000); 
+
+        // IMPORTANTE: Enviamos como text/plain para evitar o erro de CORS do Google
+        // O mode: 'no-cors' garante que o navegador envie o dado mesmo sem confirmação total
+        await fetch(syncUrl, {
           method: 'POST',
-          mode: 'no-cors', // Necessário para Google Apps Script de domínios diferentes
+          mode: 'no-cors',
           headers: { 'Content-Type': 'text/plain' },
-          body: JSON.stringify({ type: 'report', data: item })
+          body: JSON.stringify({ type: 'report', data: item }),
+          signal: controller.signal
         });
         
-        // No modo 'no-cors', não conseguimos ler o status 200, 
-        // mas se a promessa resolveu, o dado saiu do navegador.
-        // Marcamos como sincronizado para limpar a fila local.
+        clearTimeout(timeoutId);
+        
+        // Em modo 'no-cors', não conseguimos ler a resposta, então se não deu erro de rede, 
+        // assumimos que o Google recebeu para não travar a fila do usuário.
         await db.markAsSynced(item.id);
       } catch (e) {
-        console.error("Erro ao sincronizar item:", item.id, e);
+        console.error("Erro na sincronização:", e);
         setSyncError(true);
         break; 
       }
@@ -85,13 +98,13 @@ const App: React.FC = () => {
     setIsSyncing(false);
   }, [syncUrl, isSyncing, refreshLocalData]);
 
-  // Sincronização de entrada (Pull - Apenas Gestor)
   const pullFromServer = useCallback(async () => {
     if (!syncUrl || userRole !== 'admin' || isSyncing) return;
     
     setIsSyncing(true);
     try {
       const response = await fetch(`${syncUrl}?t=${Date.now()}`);
+      if (!response.ok) throw new Error("Erro servidor");
       const data = await response.json();
       
       if (data && data.submissions) {
@@ -105,20 +118,18 @@ const App: React.FC = () => {
     }
   }, [syncUrl, userRole, isSyncing, refreshLocalData]);
 
-  // Auto-sync a cada 30 segundos
   useEffect(() => {
     const interval = setInterval(() => {
       syncQueue();
-      if (userRole === 'admin') pullFromServer();
+      if (userRole === 'admin' && activeTab === 'admin') pullFromServer();
     }, 30000);
     return () => clearInterval(interval);
-  }, [syncQueue, pullFromServer, userRole]);
+  }, [syncQueue, pullFromServer, userRole, activeTab]);
 
   const handleSaveSubmission = async (data: FormData) => {
     await db.saveSubmission(data);
     await refreshLocalData();
-    // Tenta enviar imediatamente
-    syncQueue();
+    setTimeout(syncQueue, 1000); 
     return true;
   };
 
@@ -134,9 +145,9 @@ const App: React.FC = () => {
           <div className="flex items-center gap-3">
             <div 
               onClick={() => { syncQueue(); if(userRole === 'admin') pullFromServer(); }}
-              className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all cursor-pointer shadow-sm ${isSyncing ? 'bg-indigo-600 animate-pulse' : (syncError ? 'bg-rose-500' : 'bg-slate-100')}`}
+              className={`w-11 h-11 rounded-2xl flex items-center justify-center transition-all cursor-pointer shadow-sm ${isSyncing ? 'bg-indigo-600 animate-pulse' : (syncError ? 'bg-rose-500' : (pendingCount > 0 ? 'bg-amber-100' : 'bg-slate-100'))}`}
             >
-              {isSyncing ? <RefreshCw className="w-5 h-5 text-white animate-spin" /> : (syncError ? <WifiOff className="w-5 h-5 text-white" /> : <Wifi className="w-5 h-5 text-slate-400" />)}
+              {isSyncing ? <RefreshCw className="w-5 h-5 text-white animate-spin" /> : (syncError ? <WifiOff className="w-5 h-5 text-white" /> : (pendingCount > 0 ? <Wifi className="w-5 h-5 text-amber-600" /> : <CheckCircle2 className="w-5 h-5 text-emerald-500" />))}
             </div>
             <div>
               <h1 className="text-sm font-black uppercase tracking-tight leading-none">Frota Hub</h1>
@@ -147,12 +158,12 @@ const App: React.FC = () => {
                       <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
                       <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
                     </span>
-                    <span className="text-[8px] font-black text-amber-500 uppercase">{pendingCount} na fila de envio</span>
+                    <span className="text-[9px] font-black text-amber-600 uppercase">{pendingCount} na fila</span>
                   </div>
                 ) : (
                   <div className="flex items-center gap-1">
                     <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />
-                    <span className="text-[8px] font-black text-emerald-500 uppercase">Sincronizado</span>
+                    <span className="text-[9px] font-black text-emerald-500 uppercase">Sincronizado</span>
                   </div>
                 )}
               </div>
@@ -176,12 +187,12 @@ const App: React.FC = () => {
       </header>
 
       <main className="flex-grow container mx-auto p-4 max-w-2xl pb-32">
-        {!syncUrl && activeTab === 'form' && (
-          <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-2xl flex items-start gap-3">
-            <AlertCircle className="w-5 h-5 text-amber-500 shrink-0" />
+        {(!syncUrl || syncUrl.length < 10) && activeTab === 'form' && (
+          <div className="mb-6 p-5 bg-rose-50 border border-rose-100 rounded-3xl flex items-start gap-3">
+            <AlertCircle className="w-6 h-6 text-rose-500 shrink-0" />
             <div>
-              <p className="text-[10px] font-black text-amber-800 uppercase">Atenção!</p>
-              <p className="text-[10px] font-medium text-amber-700">O link do servidor não foi configurado. Os dados ficarão salvos apenas neste celular até que um gestor configure o link.</p>
+              <p className="text-[10px] font-black text-rose-800 uppercase">Falta URL do Servidor</p>
+              <p className="text-[10px] font-medium text-rose-700 leading-tight">Você precisa editar o arquivo constants.ts e colar a URL do seu Google Script.</p>
             </div>
           </div>
         )}
@@ -224,7 +235,7 @@ const App: React.FC = () => {
       </main>
 
       {userRole === 'admin' && (
-        <nav className="fixed bottom-6 left-1/2 -translate-x-1/2 w-[90%] max-w-sm bg-white/80 backdrop-blur-md border border-slate-200 shadow-2xl rounded-[2.5rem] flex justify-around p-1.5 z-[60]">
+        <nav className="fixed bottom-6 left-1/2 -translate-x-1/2 w-[90%] max-w-sm bg-white border border-slate-200 shadow-2xl rounded-[2.5rem] flex justify-around p-1.5 z-[60]">
           <button onClick={() => setActiveTab('form')} className={`flex flex-col items-center gap-1 flex-1 py-4 rounded-[2rem] transition-all ${activeTab === 'form' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400'}`}>
             <ClipboardList className="w-5 h-5" />
           </button>

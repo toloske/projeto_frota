@@ -15,7 +15,9 @@ import {
   Terminal,
   Eye,
   EyeOff,
-  Link2
+  Link2,
+  Zap,
+  ShieldAlert
 } from 'lucide-react';
 
 interface Props {
@@ -33,6 +35,7 @@ export const SettingsView: React.FC<Props> = ({
   svcList, onUpdate, onClearData, syncUrl, onUpdateSyncUrl, lastRawResponse 
 }) => {
   const [isPublishing, setIsPublishing] = useState(false);
+  const [isTesting, setIsTesting] = useState(false);
   const [publishStatus, setPublishStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [showDebug, setShowDebug] = useState(false);
   const [urlInput, setUrlInput] = useState(syncUrl);
@@ -45,9 +48,27 @@ export const SettingsView: React.FC<Props> = ({
     alert("URL salva com sucesso!");
   };
 
+  const testConnection = async () => {
+    if (!urlInput) return alert("Insira uma URL primeiro.");
+    setIsTesting(true);
+    try {
+      const resp = await fetch(`${urlInput}?action=ping&t=${Date.now()}`);
+      const text = await resp.text();
+      if (text.includes("PONG")) {
+        alert("✅ CONEXÃO ESTABELECIDA!\nO servidor está respondendo corretamente.");
+      } else {
+        alert("⚠ RESPOSTA INESPERADA:\nO link respondeu, mas não com a mensagem de teste. Verifique o script.");
+      }
+    } catch (e) {
+      alert("❌ ERRO DE CONEXÃO:\nNão foi possível alcançar o servidor. Verifique o link ou se você publicou como 'Qualquer pessoa' no Google Script.");
+    } finally {
+      setIsTesting(false);
+    }
+  };
+
   const publishConfigToCloud = async () => {
-    if (!syncUrl || !syncUrl.startsWith('http')) {
-      alert("Link do Google Script não configurado.");
+    if (!syncUrl || syncUrl.length < 20) {
+      alert("Link do servidor não configurado corretamente.");
       return;
     }
 
@@ -96,27 +117,31 @@ export const SettingsView: React.FC<Props> = ({
 
   return (
     <div className="space-y-6 pb-32">
-      {/* SEÇÃO DA URL DO SERVIDOR */}
       <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm space-y-4">
         <div className="flex items-center gap-3 mb-2">
           <Link2 className="w-6 h-6 text-indigo-600" />
-          <h2 className="text-xl font-black text-slate-800 uppercase tracking-tight">Servidor Operacional</h2>
+          <h2 className="text-xl font-black text-slate-800 uppercase tracking-tight">Status do Servidor</h2>
         </div>
-        <p className="text-[10px] font-bold text-slate-400 uppercase leading-relaxed">Insira o link do seu Google Apps Script para sincronização global.</p>
-        <div className="flex gap-2">
-          <input 
-            type="text" 
-            value={urlInput} 
-            onChange={(e) => setUrlInput(e.target.value)}
-            className="flex-1 p-4 bg-slate-50 rounded-2xl font-bold text-xs outline-none border-2 border-transparent focus:border-indigo-500"
-            placeholder="https://script.google.com/macros/s/..."
-          />
-          <button 
-            onClick={handleSaveUrl}
-            className="px-6 bg-indigo-600 text-white rounded-2xl font-black uppercase text-[10px] active:scale-95 transition-all"
-          >
-            Salvar
-          </button>
+        
+        <div className="p-4 bg-indigo-50 rounded-2xl flex items-start gap-3">
+          <ShieldAlert className="w-5 h-5 text-indigo-600 shrink-0" />
+          <div>
+            <p className="text-[10px] font-black text-indigo-800 uppercase">Configuração Ativa</p>
+            <p className="text-[10px] font-bold text-indigo-600 break-all">{syncUrl || "Nenhuma URL configurada em constants.ts"}</p>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <div className="flex gap-2">
+            <button 
+              onClick={testConnection}
+              disabled={isTesting}
+              className="flex-1 py-4 bg-emerald-50 text-emerald-600 rounded-2xl font-black uppercase text-[10px] active:scale-95 transition-all flex items-center justify-center gap-2"
+            >
+              {isTesting ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
+              Testar Conexão
+            </button>
+          </div>
         </div>
       </div>
 
@@ -135,16 +160,12 @@ export const SettingsView: React.FC<Props> = ({
           <div className="bg-slate-900/50 p-4 rounded-2xl font-mono text-[8px] text-indigo-200 overflow-x-auto border border-white/10 animate-in fade-in zoom-in duration-300">
             <div className="flex items-center gap-2 mb-2 border-b border-white/10 pb-2">
               <Terminal className="w-3 h-3" />
-              <span>DEBUG: Resposta Bruta do Servidor</span>
+              <span>Diagnóstico do Sistema</span>
             </div>
             <pre className="whitespace-pre-wrap">
-              {lastRawResponse ? (
-                lastRawResponse.includes('"config":') 
-                  ? "✓ Chave 'config' encontrada no JSON" 
-                  : "⚠ Chave 'config' NÃO encontrada no JSON!"
-              ) : "Nenhum dado recebido ainda."}
-              {"\n\n"}
-              {lastRawResponse || "Aguardando sincronização..."}
+              Link: {syncUrl}{"\n"}
+              Placas Local: {svcList.length}{"\n"}
+              Status: {isPublishing ? 'Enviando...' : 'Pronto'}
             </pre>
           </div>
         )}
