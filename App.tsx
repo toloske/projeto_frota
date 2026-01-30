@@ -16,7 +16,8 @@ import {
   AlertTriangle,
   RefreshCw,
   Wifi,
-  WifiOff
+  WifiOff,
+  CloudDownload
 } from 'lucide-react';
 
 const App: React.FC = () => {
@@ -32,24 +33,42 @@ const App: React.FC = () => {
   const [passwordInput, setPasswordInput] = useState('');
   const [pendingCount, setPendingCount] = useState(0);
 
-  // Carregar dados iniciais
-  useEffect(() => {
-    const loadData = async () => {
-      const subs = await db.getAllSubmissions();
-      setSubmissions(subs);
-      setPendingCount(subs.filter(s => s.syncStatus === 'pending').length);
-      
-      const savedSvc = localStorage.getItem('fleet_svc_config');
-      if (savedSvc) {
-        setSvcList(JSON.parse(savedSvc));
-      } else {
-        setSvcList(DEFAULT_SVC_LIST);
-      }
-    };
-    loadData();
-  }, [formKey]);
+  // Carregar dados locais inicialmente
+  const refreshLocalData = useCallback(async () => {
+    const subs = await db.getAllSubmissions();
+    setSubmissions(subs);
+    setPendingCount(subs.filter(s => s.syncStatus === 'pending').length);
+    
+    const savedSvc = localStorage.getItem('fleet_svc_config');
+    setSvcList(savedSvc ? JSON.parse(savedSvc) : DEFAULT_SVC_LIST);
+  }, []);
 
-  // Processo de Sincronização Automática (Background Sync)
+  useEffect(() => {
+    refreshLocalData();
+  }, [formKey, refreshLocalData]);
+
+  // Função para puxar dados do servidor (Apenas para o Gestor)
+  const pullFromServer = useCallback(async () => {
+    if (!syncUrl || userRole !== 'admin' || isSyncing) return;
+    
+    setIsSyncing(true);
+    try {
+      const response = await fetch(`${syncUrl}?action=get_all&t=${Date.now()}`);
+      const text = await response.text();
+      const data = JSON.parse(text);
+      
+      if (data && data.submissions) {
+        await db.upsertSubmissionsFromServer(data.submissions);
+        await refreshLocalData();
+      }
+    } catch (e) {
+      console.error("Falha ao puxar dados do servidor:", e);
+    } finally {
+      setIsSyncing(false);
+    }
+  }, [syncUrl, userRole, isSyncing, refreshLocalData]);
+
+  // Fila de Envio (Push)
   const syncQueue = useCallback(async () => {
     if (!syncUrl || isSyncing) return;
     
@@ -64,7 +83,6 @@ const App: React.FC = () => {
 
     for (const item of pending) {
       try {
-        // Usando fetch padrão com tratamento de erro
         await fetch(syncUrl, {
           method: 'POST',
           mode: 'no-cors',
@@ -72,32 +90,34 @@ const App: React.FC = () => {
           body: JSON.stringify({ type: 'report', data: item })
         });
         
-        // Como no-cors não permite ler a resposta, assumimos sucesso se não houver erro de rede
+        // Em no-cors não temos certeza do 200, mas se não estourar catch, marcamos
         await db.markAsSynced(item.id);
       } catch (e) {
-        console.error("Erro ao sincronizar item:", item.id);
+        console.error("Erro na rede ao sincronizar:", item.id);
         setSyncError(true);
-        break; // Para o loop se houver erro de rede
+        break; 
       }
     }
 
-    const updated = await db.getAllSubmissions();
-    setSubmissions(updated);
-    setPendingCount(updated.filter(s => s.syncStatus === 'pending').length);
+    await refreshLocalData();
     setIsSyncing(false);
-  }, [syncUrl, isSyncing]);
+  }, [syncUrl, isSyncing, refreshLocalData]);
 
-  // Efeito para rodar o sync a cada 20 segundos ou quando houver mudança na URL
+  // Auto-sync
   useEffect(() => {
     syncQueue();
-    const interval = setInterval(syncQueue, 20000);
+    const interval = setInterval(() => {
+      syncQueue();
+      if (userRole === 'admin') pullFromServer();
+    }, 30000);
     return () => clearInterval(interval);
-  }, [syncQueue]);
+  }, [syncQueue, pullFromServer, userRole]);
 
   const handleSaveSubmission = async (data: FormData) => {
     await db.saveSubmission(data);
-    setFormKey(k => k + 1); // Recarrega a lista e o form
-    syncQueue(); // Tenta sincronizar imediatamente
+    await refreshLocalData();
+    // Tenta sincronizar imediatamente após salvar
+    setTimeout(syncQueue, 500); 
     return true;
   };
 
@@ -111,16 +131,25 @@ const App: React.FC = () => {
       <header className="bg-white border-b border-slate-200 p-4 sticky top-0 z-50">
         <div className="container mx-auto flex justify-between items-center">
           <div className="flex items-center gap-3">
-            <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${isSyncing ? 'bg-indigo-600 animate-pulse' : (syncError ? 'bg-rose-500' : 'bg-slate-100')}`}>
+            <div 
+              onClick={() => { syncQueue(); if(userRole === 'admin') pullFromServer(); }}
+              className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all cursor-pointer ${isSyncing ? 'bg-indigo-600' : (syncError ? 'bg-rose-500' : 'bg-slate-100')}`}
+            >
               {isSyncing ? <RefreshCw className="w-5 h-5 text-white animate-spin" /> : (syncError ? <WifiOff className="w-5 h-5 text-white" /> : <Wifi className="w-5 h-5 text-slate-400" />)}
             </div>
             <div>
               <h1 className="text-sm font-black uppercase tracking-tight leading-none">Frota Hub</h1>
               <div className="flex items-center gap-1.5 mt-1">
                 {pendingCount > 0 ? (
-                  <span className="text-[8px] font-black text-amber-500 uppercase animate-bounce">{pendingCount} na fila de envio</span>
+                  <div className="flex items-center gap-1">
+                    <div className="w-1.5 h-1.5 bg-amber-500 rounded-full animate-pulse" />
+                    <span className="text-[8px] font-black text-amber-500 uppercase">{pendingCount} Pendente{pendingCount > 1 ? 's' : ''}</span>
+                  </div>
                 ) : (
-                  <span className="text-[8px] font-black text-emerald-500 uppercase">Sistema Pronto</span>
+                  <div className="flex items-center gap-1">
+                    <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />
+                    <span className="text-[8px] font-black text-emerald-500 uppercase">Sincronizado</span>
+                  </div>
                 )}
               </div>
             </div>
@@ -129,9 +158,14 @@ const App: React.FC = () => {
           {userRole === 'standard' ? (
             <button onClick={() => setShowLoginModal(true)} className="p-3 bg-slate-50 rounded-2xl text-slate-300 active:scale-95"><Lock className="w-5 h-5" /></button>
           ) : (
-            <div className="bg-indigo-50 px-3 py-1.5 rounded-full border border-indigo-100 flex items-center gap-2">
-              <ShieldCheck className="w-3 h-3 text-indigo-600" />
-              <span className="text-[10px] font-black text-indigo-600 uppercase">Gestor</span>
+            <div className="flex items-center gap-2">
+              <button onClick={pullFromServer} className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl active:scale-90">
+                <CloudDownload className="w-5 h-5" />
+              </button>
+              <div className="bg-indigo-600 px-3 py-1.5 rounded-full flex items-center gap-2 shadow-lg shadow-indigo-100">
+                <ShieldCheck className="w-3 h-3 text-white" />
+                <span className="text-[10px] font-black text-white uppercase">Gestor</span>
+              </div>
             </div>
           )}
         </div>
@@ -153,7 +187,7 @@ const App: React.FC = () => {
             {activeTab === 'admin' && (
               <AdminDashboard 
                 submissions={submissions} 
-                onRefresh={syncQueue}
+                onRefresh={() => { syncQueue(); pullFromServer(); }}
                 isSyncing={isSyncing}
                 lastSync={new Date()}
                 svcList={svcList}
@@ -177,13 +211,13 @@ const App: React.FC = () => {
 
       {userRole === 'admin' && (
         <nav className="fixed bottom-6 left-1/2 -translate-x-1/2 w-[90%] max-w-sm bg-white border border-slate-200 shadow-2xl rounded-full flex justify-around p-1.5 z-[60]">
-          <button onClick={() => setActiveTab('form')} className={`flex flex-col items-center gap-1 flex-1 py-3 rounded-full transition-all ${activeTab === 'form' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400'}`}>
+          <button onClick={() => setActiveTab('form')} className={`flex flex-col items-center gap-1 flex-1 py-3 rounded-full transition-all ${activeTab === 'form' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200' : 'text-slate-400'}`}>
             <ClipboardList className="w-5 h-5" />
           </button>
-          <button onClick={() => setActiveTab('admin')} className={`flex flex-col items-center gap-1 flex-1 py-3 rounded-full transition-all ${activeTab === 'admin' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400'}`}>
+          <button onClick={() => setActiveTab('admin')} className={`flex flex-col items-center gap-1 flex-1 py-3 rounded-full transition-all ${activeTab === 'admin' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200' : 'text-slate-400'}`}>
             <LayoutDashboard className="w-5 h-5" />
           </button>
-          <button onClick={() => setActiveTab('settings')} className={`flex flex-col items-center gap-1 flex-1 py-3 rounded-full transition-all ${activeTab === 'settings' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400'}`}>
+          <button onClick={() => setActiveTab('settings')} className={`flex flex-col items-center gap-1 flex-1 py-3 rounded-full transition-all ${activeTab === 'settings' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200' : 'text-slate-400'}`}>
             <Settings className="w-5 h-5" />
           </button>
         </nav>

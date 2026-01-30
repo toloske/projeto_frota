@@ -33,6 +33,22 @@ export const saveSubmission = async (data: FormData): Promise<void> => {
   });
 };
 
+export const upsertSubmissionsFromServer = async (data: any[]): Promise<void> => {
+  const db = await initDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(STORE_NAME, 'readwrite');
+    const store = transaction.objectStore(STORE_NAME);
+    
+    data.forEach(item => {
+      // Itens vindos do servidor são marcados como sincronizados
+      store.put({ ...item, syncStatus: 'synced' });
+    });
+
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error);
+  });
+};
+
 export const getAllSubmissions = async (): Promise<(FormData & { syncStatus: string })[]> => {
   const db = await initDB();
   return new Promise((resolve, reject) => {
@@ -55,15 +71,18 @@ export const markAsSynced = async (id: string): Promise<void> => {
     const transaction = db.transaction(STORE_NAME, 'readwrite');
     const store = transaction.objectStore(STORE_NAME);
     const getRequest = store.get(id);
+    
     getRequest.onsuccess = () => {
       const data = getRequest.result;
       if (data) {
         data.syncStatus = 'synced';
-        store.put(data);
+        const putRequest = store.put(data);
+        putRequest.onsuccess = () => resolve();
+        putRequest.onerror = () => reject(putRequest.error);
+      } else {
+        resolve();
       }
-      resolve();
     };
-    // Fix: Use 'getRequest' instead of the undefined 'request'
     getRequest.onerror = () => reject(getRequest.error);
   });
 };
